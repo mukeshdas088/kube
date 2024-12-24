@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: emptydir-demo
+spec:
+  containers:
+    - name: writer-container
+      image: busybox
+      command:
+        - "/bin/sh"
+        - "-c"
+        - "echo 'Hello from EmptyDir' > /mnt/data/hello.txt; sleep 3600"
+      volumeMounts:
+        - name: emptydir-volume
+          mountPath: /mnt/data  # Mount EmptyDir to /mnt/data
+
+    - name: reader-container
+      image: busybox
+      command:
+        - "/bin/sh"
+        - "-c"
+        - "cat /mnt/data/hello.txt; sleep 3600"
+      volumeMounts:
+        - name: emptydir-volume
+          mountPath: /mnt/data  # Mount EmptyDir to /mnt/data
+
+  volumes:
+    - name: emptydir-volume
+      emptyDir: {}  # Define EmptyDir volume
+
+
+--------------- output ----------------
+
+controlplane $ kubectl logs emptydir-demo -c writer-container
+controlplane $ kubectl logs emptydir-demo -c reader-container
+Hello from EmptyDir
+
+-------------------------------------------------------------------------------------------------------------- 
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: view-file-demo
+spec:
+  containers:
+    - name: file-reader
+      image: busybox
+      command: ["cat", "/mnt/data/my-local-file.txt"]  # Command to display the file contents
+      volumeMounts:
+        - name: local-file
+          mountPath: /mnt/data/my-local-file.txt  # Mount the host file directly into the container at the correct path
+
+  volumes:
+    - name: local-file
+      hostPath:
+        path: /mnt/data/host/my-local-file.txt  # Path to the file on the host system
+        type: File  # Ensure that it is a file, not a directory
+
+
+--------------- output ----------------
+
+controlplane $ mkdir -p /mnt/data/host # Create the directory if it doesn't exist 
+controlplane $ echo "This is the content of the file" > /mnt/data/host/my-local-file.txt # Create the file 
+controlplane $ chmod 777 /mnt/data/host/my-local-file.txt # Set permissions to ensure the file is readable 
+controlplane $ kubectl apply -f view-file-demo.yaml error: the path "view-file-demo.yaml" does not exist 
+controlplane $ kubectl apply -f pod.yml pod/view-file-demo created
+
+
+controlplane $ kubectl get pods
+NAME             READY   STATUS      RESTARTS      AGE
+view-file-demo   0/1     Completed   4 (59s ago)   104s
+
+controlplane $ kubectl logs view-file-demo -c file-reader
+This is the content of the file
+
+-------------------------------------------------------------------------------------------------------------- 
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: file-processing-pod
+spec:
+  containers:
+    # Container 1: file-generator
+    - name: file-generator
+      image: busybox
+      command: ["/bin/sh", "-c", "echo 'This is the start of the file content.' > /mnt/data/myfile.txt; sleep 3600"]
+      volumeMounts:
+        - name: shared-data
+          mountPath: /mnt/data  # Mount the emptyDir volume
+
+    # Container 2: file-reader
+    - name: file-reader
+      image: busybox
+      command: ["/bin/sh", "-c", "cat /mnt/data/myfile.txt; sleep 3600"]
+      volumeMounts:
+        - name: shared-data
+          mountPath: /mnt/data  # Mount the emptyDir volume
+
+    # Container 3: file-appender
+    - name: file-appender
+      image: busybox
+      command: ["/bin/sh", "-c", "echo 'This is an appended line.' >> /mnt/data/myfile.txt; sleep 3600"]
+      volumeMounts:
+        - name: shared-data
+          mountPath: /mnt/data  # Mount the emptyDir volume
+
+  volumes:
+    - name: shared-data  
+      emptyDir: {}  # EmptyDir volume that will be shared by all containers
+
+--------------- output ----------------
+
+controlplane $ kubectl logs file-processing-pod -c file-appender
+controlplane $ kubectl logs file-processing-pod -c file-reader
+This is the start of the file content.
+controlplane $ kubectl logs file-processing-pod -c file-generator
+
+-------------------------------------------------------------------------------------------------------------- 
