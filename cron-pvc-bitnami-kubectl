@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv
+  labels:
+    app: prod
+spec:
+  capacity:
+    storage: 1Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  local:
+    path: /mnt/data  # Local path on the node where data will be stored
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - controlplane  # Make sure the PV is only accessible to the correct node
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: manual
+  selector:
+    matchLabels:
+       app: prod  # Match the label from the PV
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubectl-cronjob
+spec:
+  schedule: "*/1 * * * *"  # This CronJob runs every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Running kubectl get pods at $(date)" >> /mnt/data/kubectl_output.log
+                  /opt/bitnami/kubectl get pods --namespace=default >> /mnt/data/kubectl_output.log 2>&1
+              volumeMounts:
+                - name: log-volume
+                  mountPath: /mnt/data  # Mount the PVC at /mnt/data in the container
+          restartPolicy: OnFailure
+          volumes:
+            - name: log-volume
+              persistentVolumeClaim:
+                claimName: my-pvc  # This links the PVC to the CronJob
