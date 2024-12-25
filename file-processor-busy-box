@@ -1,0 +1,52 @@
+
+kubectl drain node01 --ignore-daemonsets --force
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+controlplane $ cat file-processor-pod.yaml 
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: file-processor
+spec:
+  containers:
+    - name: file-processor-container
+      image: busybox:latest  # Replace with your own image if you have one
+      volumeMounts:
+        - name: input-volume
+          mountPath: /app/input_data  # Path inside container to access input file
+        - name: output-volume
+          mountPath: /app/output_data  # Path inside container to store output file
+      env:
+        - name: INPUT_FILE_PATH
+          value: "/app/input_data/input_file.txt"  # Input file path inside the container
+        - name: OUTPUT_FILE_PATH
+          value: "/app/output_data/output_file.txt"  # Output file path inside the container
+      command: ["/bin/sh", "-c", "echo 'Input File Path: $INPUT_FILE_PATH'; echo 'Output File Path: $OUTPUT_FILE_PATH'; cat $INPUT_FILE_PATH | tr 'a-z' 'A-Z' > $OUTPUT_FILE_PATH"]
+
+  volumes:
+    - name: input-volume
+      hostPath:
+        path: /path/to/local/input_data  # Path on the host machine
+        type: DirectoryOrCreate
+    - name: output-volume
+      hostPath:
+        path: /path/to/local/output_data  # Path on the host machine
+        type: DirectoryOrCreate
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+mkdir -p /path/to/local/output_data/
+mkdir -p /path/to/local/input_data/
+chmod 777 /path/to/local/input_data/
+chmod 777 /path/to/local/output_data/
+
+
+echo "this is kubernetes clustet">> /path/to/local/input_data/input_file.txt
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
