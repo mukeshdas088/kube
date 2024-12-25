@@ -1,0 +1,68 @@
+
+mkdir -p /path/to/local/input_data;chmod 777 /path/to/local/input_data
+mkdir -p /path/to/local/output_data;chmod 777 /path/to/local/input_data
+echo “Hello, world!” > /path/to/local/input_data/input_file.txt
+echo "This is an appended line." >> /path/to/local/input_data/input_file.txt
+kubectl drain node01 —ignore-daemonsets
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: file-processing-pod
+spec:
+  containers:
+    # Container 1: file-writer
+    - name: file-writer
+      image: busybox:latest
+      volumeMounts:
+        - name: input-volume
+          mountPath: /app/input_data
+        - name: output-volume
+          mountPath: /app/output_data
+      env:
+        - name: INPUT_FILE_PATH
+          value: "/app/input_data/input_file.txt"
+        - name: OUTPUT_FILE_PATH
+          value: "/app/output_data/output_file.txt"
+      command: ["/bin/sh", "-c", "echo \"Input File Path: $INPUT_FILE_PATH\"; echo \"Output File Path: $OUTPUT_FILE_PATH\"; cat $INPUT_FILE_PATH | tr 'a-z' 'A-Z' > $OUTPUT_FILE_PATH"]
+
+    # Container 2: file-reader
+    - name: file-reader
+      image: busybox
+      command: ["/bin/sh", "-c", "cat /app/input_data/input_file.txt; sleep 3600"]
+      volumeMounts:
+        - name: input-volume
+          mountPath: /app/input_data
+
+    # Container 3: file-receiver
+    - name: file-receiver
+      image: busybox
+      command: ["/bin/sh", "-c", " cat /app/output_data/output_file.txt; sleep 3600"]
+      volumeMounts:
+        - name: output-volume
+          mountPath: /app/output_data
+
+  volumes:
+    - name: input-volume
+      hostPath:
+        path: /path/to/local/input_data
+        type: DirectoryOrCreate
+    - name: output-volume
+      hostPath:
+        path: /path/to/local/output_data
+        type: DirectoryOrCreate
+
+
+
+kubectl logs file-processing-pod -c file-writter; kubectl logs file-processing-pod -c file-reader; kubectl logs file-processing-pod -c file-receiver
+
+
+controlplane $ kubectl logs file-processing-pod -c file-writer; kubectl logs file-pr
+ocessing-pod -c file-reader; kubectl logs file-processing-pod -c file-receiver
+
+Input File Path: /app/input_data/input_file.txt
+Output File Path: /app/output_data/output_file.txt
+This is an appended line.
+This is an appended line1.
+THIS IS AN APPENDED LINE.
+THIS IS AN APPENDED LINE1.
