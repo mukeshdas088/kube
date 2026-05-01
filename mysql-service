@@ -1,0 +1,121 @@
+To build this "Real-Time Project" from scratch—including the Database (ClusterIP), the Frontend, and the Table Creation—follow this sequence.
+Phase 1: Create the Network and Backend
+First, we define the MySQL deployment and its ClusterIP service.
+# 1. Create a file named backend.yaml
+cat <<EOF > backend.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-db
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - image: mysql:8.0
+        name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "pass123"
+        - name: MYSQL_DATABASE
+          value: "project_db"
+EOF
+
+# 2. Apply it to the cluster
+kubectl apply -f backend.yaml
+
+Phase 2: Verify the Service
+Wait for the pod to be "Running" and check the internal IP.
+# 3. Check pods (Wait until status is 'Running')
+kubectl get pods
+
+# 4. Check the Service ClusterIP
+kubectl get svc mysql-service
+
+Phase 3: Create the Table from a Separate Pod
+Now, we act as a Database Admin. We run a temporary pod to connect to the mysql-service.
+# 5. Launch the admin pod
+kubectl run db-setup --image=mysql:8.0 -i --tty --rm -- /bin/bash
+
+# 6. (INSIDE the db-setup pod) Connect to the ClusterIP
+mysql -h mysql-service -u root -ppass123
+
+# 7. (INSIDE MySQL prompt) Run the SQL commands
+USE project_db;
+
+CREATE TABLE user_tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    task_name VARCHAR(255),
+    status VARCHAR(50)
+);
+
+INSERT INTO user_tasks (task_name, status) VALUES ('Setup ClusterIP', 'Complete');
+
+SELECT * FROM user_tasks;
+
+# 8. Type 'exit' twice to leave MySQL and the pod
+exit
+exit
+
+Phase 4: Connect a "Frontend" App
+Finally, deploy a second app that will use that ClusterIP to "read" the data.
+# 9. Create a file named frontend.yaml
+cat <<EOF > frontend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-app
+spec:
+  selector:
+    matchLabels:
+      app: py-worker
+  template:
+    metadata:
+      labels:
+        app: py-worker
+    spec:
+      containers:
+      - name: python
+        image: python:3.9
+        command: ["/bin/sh", "-c", "sleep 3600"]
+EOF
+
+# 10. Apply the frontend
+kubectl apply -f frontend.yaml
+
+Phase 5: Final Real-Time Check
+Run a quick Python command from the frontend pod to verify it can see the DB.
+# 11. Get the name of the python-app pod
+PY_POD=$(kubectl get pods -l app=py-worker -o name)
+
+# 12. Run a connection test from the Python pod
+
+
+kubectl exec -it $(kubectl get pods -l app=py-worker -o name | head -n 1) -- bash -c "pip install mysql-connector-python > /dev/null && python3 -c \"
+import mysql.connector
+db = mysql.connector.connect(host='mysql-service', user='root', password='pass123', database='project_db')
+cursor = db.cursor()
+cursor.execute('SELECT * FROM user_tasks')
+print('Data from DB:', cursor.fetchone())
+\""
+
+Summary of Workflow
+1. YAML Apply: Create the "stable" internal address (ClusterIP).
+2. kubectl run: Use a temporary tool pod to initialize data.
+3. kubectl exec: Run a real script from an application pod to consume the data.
