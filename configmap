@@ -1,0 +1,166 @@
+
+
+controlplane ~ ➜  kubectl get cm my-conf -o yaml
+apiVersion: v1
+data:
+  logname: Agents of Shield
+  shortname: AOS
+  status: code has completed successfully.
+  text: This is an encrypted message.
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"status":"code has completed successfully.","text":"This is an encrypted message."},"kind":"ConfigMap","metadata":{"annotations":{},"name":"my-conf","namespace":"default"}}
+  creationTimestamp: "2026-05-02T15:43:32Z"
+  name: my-conf
+  namespace: default
+  resourceVersion: "8307"
+  uid: 7d36d307-fde6-421c-bf8e-af3229ffdc62
+
+controlplane ~ ➜  
+
+
+
+
+
+
+
+To ensure your deployment works perfectly, here is the final, "clean" version of your `api.yaml`. 
+
+I have standardized the indentation and added the missing spaces after colons. This version uses the **2-space indentation** standard, which is the safest way to avoid the YAML parsing errors you encountered.
+
+### The Clean `api.yaml`
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-dep
+  labels:
+    app: prod
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: prod
+  template:
+    metadata:
+      labels:
+        app: prod
+    spec:
+      containers:
+        - name: my-container
+          image: nginx
+          command: ["/bin/bash", "-c", "env | grep details_conf && sleep 3600"]
+          env:
+            - name: details_conf
+              valueFrom:
+                configMapKeyRef:
+                  name: my-conf
+                  key: text
+            - name: details_conf_v1
+              valueFrom:
+                configMapKeyRef:
+                  name: my-conf
+                  key: status
+```
+
+---
+
+### Instructions to Save and Run
+
+1.  **Open the file:**
+    ```bash
+    vi api.yaml
+    ```
+2.  **Clear the file:**
+    In `vi`, press `Esc`, then type `:%d` and press `Enter`. This deletes everything currently in the file.
+3.  **Paste the clean code:**
+    Press `i` to enter Insert mode, paste the code above, then press `Esc`.
+4.  **Save and Exit:**
+    Type `:wq` and press `Enter`.
+5.  **Apply the configuration:**
+    ```bash
+    kubectl apply -f api.yaml
+    ```
+
+---
+
+### Final Verification Workflow
+
+Once applied, use these three commands to verify everything is running as expected:
+
+*   **Check Pod Status:**
+    ```bash
+    kubectl get pods -l app=prod
+    ```
+*   **Check the Logs (for the ConfigMap values):**
+    ```bash
+    # This will show you the output of the 'grep' command in your YAML
+    kubectl logs -l app=prod
+    ```
+*   **Shell into a Pod:**
+    ```bash
+    # To manually inspect the environment inside one of the 6 pods
+    kubectl exec -it $(kubectl get pods -l app=prod -o name | head -n 1) -- /bin/bash
+
+
+
+controlplane ~ ✖ history
+    1  clear
+    2  vi conf.yaml
+    3  kubectl create -f conf.yaml 
+    4  cat conf.yaml 
+    5  vi conf.yaml
+    6  kubectl create -f conf.yaml 
+    7  kubectl create configmap my-conf200 --from-literal country=India --from-literal capital=New_Delhi
+    8  kubectl get cm
+    9  vi my-pod.yaml
+   10  kubectl run my-pod.yaml
+   11  vi my-pod.yaml
+   12  cat my-pod.yaml 
+   13  cat conf.yaml 
+   14  vi my-pod.yaml
+   15  kubectl run my-pod.yaml
+   16  cat conf.yaml 
+   17  cat my-pod.yaml 
+   18  kubectl run my-pod.yaml
+   19  kubectl apply -f my-pod.yaml
+   20  kubectl logs my-pod
+   21  kubectl delete all --all
+   22  clear
+   23  vi meta_conf.yaml
+   24  kubectl apply -f meta_conf.yaml 
+   25  kubectl get cm
+   26  kubectl get cm my-conf -o yaml
+   27  clear
+   28  vi api.yaml
+   29  kubectl apply -f api.yaml
+   30  cat api.yaml
+   31  vi api.yaml
+   32  kubectl apply -f api.yaml
+   33  vi api.yaml
+   34  cat api.yaml
+   35  kubectl apply -f api.yaml
+   36  vi api.yaml
+   37  kubectl apply -f api.yaml
+   38  kubectl get pods
+   39  kubectl logs -l app=prod
+   40  history
+
+controlplane ~ ➜  
+
+
+controlplane ~ ➜  kubectl logs -l app=prod
+details_conf_v1=code has completed successfully.
+details_conf=This is an encrypted message.
+details_conf_v1=code has completed successfully.
+details_conf=This is an encrypted message.
+details_conf_v1=code has completed successfully.
+details_conf=This is an encrypted message.
+details_conf_v1=code has completed successfully.
+details_conf=This is an encrypted message.
+details_conf_v1=code has completed successfully.
+details_conf=This is an encrypted message.
+details_conf_v1=code has completed successfully.
+details_conf=This is an encrypted message.
