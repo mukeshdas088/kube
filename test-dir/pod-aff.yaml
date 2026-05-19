@@ -1,0 +1,29 @@
+apiVersion : apps/v1
+kind : Deployment
+metadata :
+  name : my-dep-pod-af
+  labels :
+    app : new-app
+spec :
+  replicas : 2
+  selector :
+    matchLabels :
+      app : new-app
+  template :
+    metadata :
+      labels :
+        app : new-app
+    spec :
+      affinity :
+        podAffinity :
+          requiredDuringSchedulingIgnoredDuringExecution :
+            - labelSelector :
+                matchExpressions :
+                  - key : app
+                    operator : In
+                    values :
+                      - prod
+              topologyKey : "kubernetes.io/hostname"
+      containers :
+        - name : my-containers
+          image : nginx

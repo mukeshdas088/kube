@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-headless-backend
+spec:
+  replicas: 3 # We'll use 3 replicas to make the DNS output obvious
+  selector:
+    matchLabels:
+      app: web-headless
+  template:
+    metadata:
+      labels:
+        app: web-headless
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80

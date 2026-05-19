@@ -1,0 +1,28 @@
+apiVersion : apps/v1
+kind : Deployment
+metadata :
+  name : my-dep-af
+  labels :
+    aap : prod
+spec :
+  replicas : 2
+  selector :
+    matchLabels :
+      app : prod
+  template :
+    metadata :
+      labels :
+        app : prod
+    spec :
+      affinity :
+        nodeAffinity :
+          requiredDuringSchedulingIgnoredDuringExecution :
+            nodeSelectorTerms :
+              - matchExpressions :
+                  - key : env
+                    operator : In
+                    values :
+                      - test
+      containers :
+        - name : my-cont
+          image : nginx

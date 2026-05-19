@@ -1,0 +1,30 @@
+apiVersion : apps/v1
+kind : Deployment
+metadata :
+    name : affinity-dep
+    labels :
+      app : prod
+spec :
+  replicas : 2
+  selector :
+    matchLabels :
+      app : prod
+  template :
+    metadata :
+      name : my-pods
+      labels :
+        app : prod
+    spec :
+      affinity :
+        nodeAffinity :
+          requiredDuringSchedulingIgnoredDuringExecution :
+            nodeSelectorTerms :
+              - matchExpressions :
+                  - key : env
+                    operator : In
+                    values :
+                      - dep-pipeline
+      containers :
+        - name : my-cont
+          image : nginx
+

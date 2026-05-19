@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ping-script-config
+data:
+  ping.py: |
+    import os
+    import platform
+    import subprocess
+
+    def do_ping(host):
+        param = '-n' if platform.system().lower() == 'windows' else '-c'
+        command = ['ping', param, '1', host]
+        print(f"--- Pinging {host} ---")
+        result = subprocess.run(command, capture_output=True, text=True)
+        print(result.stdout)
+
+    if __name__ == "__main__":
+        # Change this to any host/service name you want to test
+        target = "8.8.8.8" 
+        do_ping(target)
