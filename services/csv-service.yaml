@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csv-server
+  labels:
+    app: csv-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csv-app
+  template:
+    metadata:
+      labels:
+        app: csv-app
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: csv-volume
+          mountPath: /usr/share/nginx/html/sales_data.csv
+          subPath: sales_data.csv
+        - name: csv-volume
+          mountPath: /usr/share/nginx/html/user_data.csv
+          subPath: user_data.csv
+      volumes:
+      - name: csv-volume
+        configMap:
+          name: csv-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: csv-clusterip-service
+spec:
+  type: ClusterIP
+  selector:
+    app: csv-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
