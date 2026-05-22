@@ -20,3 +20,5 @@ spec:
     securityContext:
       runAsUser: 1500 # Perfectly overrides 3500 for this specific container
 # privileged: true tells Kubernetes to give the container root-level access to the host's kernel and devices.
+# container level setting will override the setting at pod level 
+# If Security Context parameter “runasUser” is not set than all operations are performed as root(0) user.

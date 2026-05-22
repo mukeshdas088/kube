@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app-with-sidecar
+  namespace: my-ns
+  labels:
+    app: web-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-server
+  template:
+    metadata:
+      labels:
+        app: web-server
+    spec:
+      containers:
+        # --- 1. THE MAIN APPLICATION CONTAINER (NGINX) ---
+        - name: main-web-app
+          image: nginx
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: shared-logs
+              mountPath: /var/log/nginx
+
+        # --- 2. THE SIDECAR CONTAINER (ALPINE) ---
+        - name: log-shipper-sidecar
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mkdir -p /var/log/nginx
+              touch /var/log/nginx/access.log
+              exec tail -f /var/log/nginx/access.log
+          volumeMounts:
+            - name: shared-logs
+              mountPath: /var/log/nginx
+
+      # --- 3. THE SHARED VOLUME ---
+      volumes:
+        - name: shared-logs
+          emptyDir: {}

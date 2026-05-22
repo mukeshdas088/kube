@@ -1,0 +1,27 @@
+This section of the YAML represents the absolute core mechanics of the Sidecar Design Pattern.
+
+Let's dissect how this specific block of code binds these two radically different containers into a single, cohesive unit inside the same Pod, focusing on how they share storage and execute tasks.
+
+1. The Shared Volume Mappings
+The defining characteristic of this setup is that both containers reference the exact same volume name (shared-logs), but they interact with it independently.
+
+                  [ Pod: web-app-with-sidecar ]
+  ┌──────────────────────────────────────────────────────────┐
+  │                                                          │
+  │   ┌───────────────────┐          ┌───────────────────┐   │
+  │   │   main-web-app    │          │log-shipper-sidecar│   │
+  │   │     (nginx)       │          │     (alpine)      │   │
+  │   └─────────┬─────────┘          └─────────┬─────────┘   │
+  │             │                              │             │
+  │  mounts to: /var/log/nginx    mounts to: /var/log/nginx  │
+  │             │                              │             │
+  │             └──────────────┬───────────────┘             │
+  │                            ▼                             │
+  │                 ┌────────────────────┐                   │
+  │                 │    shared-logs     │                   │
+  │                 │    (emptyDir)      │                   │
+  │                 └────────────────────┘                   │
+  └──────────────────────────────────────────────────────────┘
+main-web-app: Nginx is compiled by default to output its log stream directly to a physical file located at /var/log/nginx/access.log. By mapping shared-logs to /var/log/nginx, you are hijacking that local folder. Nginx thinks it is writing to regular container storage, but it is actually streaming data straight onto the shared host disk space.
+
+log-shipper-sidecar: You map the exact same shared-logs volume to its own local path /var/log/nginx. Be
