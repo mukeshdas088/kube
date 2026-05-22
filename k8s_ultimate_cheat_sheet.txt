@@ -1,0 +1,296 @@
+===============================================================================
+     KUBERNETES LAB & RUNTIME CHEAT SHEET: OPERATIONS & DISK MANAGEMENT
+===============================================================================
+Generated on: 2026-05-23
+Purpose: Permanent Reference Guide for CRICTL, Pod Storage Pipelines, and EOF
+
+-------------------------------------------------------------------------------
+1. CORE CRICTL ARCHITECTURE COMMANDS (Worker Node Engine Diagnostics)
+-------------------------------------------------------------------------------
+Since modern K8s uses containerd/CRI-O instead of Docker, use 'crictl' on nodes.
+All crictl commands require administrative root privileges (sudo).
+
+• Diagnostics & Health Check:
+  sudo crictl info             - Show runtime config, storage paths, status.
+  sudo crictl version          - Check CRI API version and daemon version.
+  sudo crictl stats            - Monitor real-time CPU/Memory of local containers.
+
+• Managing Images (Pre-caching / Offline Troubleshooting):
+  sudo crictl images           - List all images cached on node's hard drive.
+  sudo crictl pull <image:tag>  - Manually cache image (e.g., sudo crictl pull alpine:3.18)
+  sudo crictl rmi <image-id>   - Remove an image from storage to free up disk.
+
+• Pod & Container Inspection:
+  sudo crictl pods             - List all Active Pod Sandboxes on this specific worker node.
+  sudo crictl inspectp <pod-id>- Deep-dive low-level JSON network/meta data of a Pod.
+  sudo crictl ps               - List only active running containers.
+  sudo crictl ps -a            - List all containers (Running, Crashed, Stopped).
+  sudo crictl inspect <id>     - Inspect exact environment variables and mount paths.
+  sudo crictl logs <id>        - Fetch stdout/stderr outputs directly from node disk.
+  sudo crictl logs -f <id>     - Stream running logs in real-time.
+
+• Emergency Direct Access (Bypassing Master Node / Control Plane Network failures):
+  sudo crictl exec -it <container-id> /bin/sh
+
+• Pro-Tip: Permanent containment of "Default Endpoints Warning"
+  Create /etc/crictl.yaml and paste:
+  runtime-endpoint: unix:///run/containerd/containerd.sock
+  image-endpoint: unix:///run/containerd/containerd.sock
+  timeout: 10
+  debug: false
+
+-------------------------------------------------------------------------------
+2. AUTOMATED IMAGE CACHE LIFECYCLE SCRIPTS (POSIX-Compliant Variants)
+-------------------------------------------------------------------------------
+
+▲ OPTION A: POSIX COMPLIANT WORKER NODE DELETE UTILITY (~/delete.sh)
+--------------------------------------------------------------------
+#!/bin/sh
+if [ "$(id -u)" -ne 0 ]; then
+    echo "❌ Error: This script must be run with sudo/root privileges."
+    exit 1
+fi
+if ! type crictl > /dev/null 2>&1; then
+    echo "❌ Error: 'crictl' command utility not found on this system."
+    exit 1
+fi
+if ! crictl info > /dev/null 2>&1; then
+    echo "❌ Error: Container runtime socket is down."
+    exit 1
+fi
+printf "👉 Enter the image name or ID to delete: "
+read -r TARGET_IMAGE
+if [ -z "$TARGET_IMAGE" ]; then
+    echo "❌ Error: Image target input cannot be empty!"
+    exit 1
+fi
+IMAGE_ID=$(crictl images -q "$TARGET_IMAGE" 2>/dev/null)
+if [ -z "$IMAGE_ID" ]; then
+    echo "ℹ️  The image '$TARGET_IMAGE' does not exist in the local cache."
+    exit 0
+fi
+echo "🗑️  Removing image from worker node storage..."
+if crictl rmi "$IMAGE_ID" > /dev/null 2>&1; then
+    echo "✅ Success: Image '$TARGET_IMAGE' has been cleanly deleted."
+else
+    echo "❌ Error: Failed to delete image. It might be locked by an active Pod container."
+fi
+
+▲ OPTION B: POSIX COMPLIANT CACHE PURGER UTILITY (~/clear-all.sh)
+--------------------------------------------------------------------
+#!/bin/sh
+if [ "$(id -u)" -ne 0 ]; then
+    echo "❌ Error: This script must be run with sudo/root privileges."
+    exit 1
+fi
+ALL_IMAGES=$(crictl images -q)
+if [ -z "$ALL_IMAGES" ]; then
+    echo "ℹ️  The local image cache is already completely empty."
+    exit 0
+fi
+echo "⚠️  WARNING: You are about to delete ALL cached images on this node."
+printf "🤔 Are you sure you want to proceed? (y/N): "
+read -r CONFIRM
+case "$CONFIRM" in
+    [yY][eE][sS]|[yY])
+        for IMG_ID in $ALL_IMAGES; do
+            IMG_NAME=$(crictl images | grep "$IMG_ID" | awk '{print $1":"$2}' | head -n 1)
+            printf "Removing: %s... " "${IMG_NAME:-$IMG_ID}"
+            if crictl rmi "$IMG_ID" > /dev/null 2>&1; then echo "✅ Done"; else echo "❌ Blocked"; fi
+        done
+        ;;
+    *)
+        echo "❌ Operation cancelled."
+        exit 0
+        ;;
+esac
+echo "📋 Remaining Local Cache:"
+crictl images
+
+-------------------------------------------------------------------------------
+3. ADVANCED CONTAINER WORKSPACE INTERACTION (4-Container Pipeline Deployment)
+-------------------------------------------------------------------------------
+This pattern proves how 'emptyDir: {}' acts as a super-fast shared memory 
+scratchpad linking containers together into sequential processing pipelines.
+
+Manifest File Path: ~/kube/side-car/4-container-pipeline.yaml
+--------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi-agent-pipeline
+  namespace: my-ns
+  labels:
+    app: data-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-pipeline
+  template:
+    metadata:
+      labels:
+        app: data-pipeline
+    spec:
+      containers:
+        - name: container-1-writer
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mkdir -p /workspace
+              while true; do
+                echo "[Container 1]: Initialized task data at \$(date)" > /workspace/shared_data.txt
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+        - name: container-2-appender
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                if [ -f /workspace/shared_data.txt ]; then
+                  echo "[Container 2]: Appended analytics modeling info" >> /workspace/shared_data.txt
+                fi
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+        - name: container-3-appender
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                if [ -f /workspace/shared_data.txt ]; then
+                  echo "[Container 3]: Appended data verification signatures" >> /workspace/shared_data.txt
+                fi
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+        - name: container-4-final-reader
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                if [ -f /workspace/shared_data.txt ]; then
+                  echo "[Container 4]: Final compilation check completed." >> /workspace/shared_data.txt
+                  echo "------------------------------------------------"
+                  cat /workspace/shared_data.txt
+                  echo "================================================"
+                fi
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+      volumes:
+        - name: pipeline-storage
+          emptyDir: {}
+
+• Execution & Stream Verification Commands:
+  kubectl apply -f ~/kube/side-car/4-container-pipeline.yaml
+  kubectl get pods -n my-ns -w
+  kubectl logs -f deployment/multi-agent-pipeline -n my-ns -c container-4-final-reader
+
+-------------------------------------------------------------------------------
+4. MASTERING THE EOF (END-OF-FILE) HEREDOC INTERFACE
+-------------------------------------------------------------------------------
+The absolute terminal tool for injecting configuration states without opening editors.
+
+• Rule 1: Create or Overwrite completely (Single redirection flag '>')
+  cat << 'EOF' > file.txt
+  Content goes here
+  EOF
+
+• Rule 2: Append dynamically to the bottom (Double redirection flag '>>')
+  cat << 'EOF' >> file.txt
+  Appended content goes here
+  EOF
+
+• Rule 3: Literal vs Expansion Protection
+  - Quoted ('EOF'): Raw literal text file drops. System symbols like $(date) 
+    or $USER are NOT calculated now; they pass through as raw text for containers to run later.
+  - Unquoted (EOF): Dynamic interpolation engine. Your local shell translates 
+    variables into text immediately BEFORE writing the file.
+
+• Rule 4: Handling Paths with Tilde '~' or Variables via Prompts
+  When utilizing interactive shell inputs ('read -r INPUT_PATH'), the bash engine 
+  treats '~' as a character string instead of expanding it to your root profile.
+  To execute clean expanding routing logic across directories, parse paths with 'eval':
+  
+  TARGET_FILE=$(eval echo "$INPUT_PATH")
+
+-------------------------------------------------------------------------------
+5. FULL INTERACTIVE SCRIPTS TO AUTOMATE YOUR CUSTOMIZED WORKFLOW
+-------------------------------------------------------------------------------
+
+▲ SCRIPT 1: INTERACTIVE DYNAMIC CREATOR (~/kube/scripts/create-dynamic.sh)
+--------------------------------------------------------------------
+#!/bin/sh
+echo "================================================"
+echo "📝 Dynamic File Creator (Custom Content)"
+echo "================================================"
+printf "👉 Enter the full path of the file to create: "
+read -r INPUT_PATH
+if [ -z "$INPUT_PATH" ]; then
+    echo "❌ Error: Target file path cannot be empty!"
+    exit 1
+fi
+TARGET_FILE=$(eval echo "$INPUT_PATH")
+mkdir -p "$(dirname "$TARGET_FILE")"
+echo "💬 Enter the content you want to write into this file:"
+printf "✍️  Content: "
+read -r CUSTOM_CONTENT
+echo "Writing fresh data to: $TARGET_FILE..."
+cat << INNER_EOF > "$TARGET_FILE"
+================================================
+🚀 APPLICATION STATE INITIALIZED
+================================================
+Timestamp: \$(date)
+Payload: $CUSTOM_CONTENT
+================================================
+INNER_EOF
+echo "✅ File created successfully! Current contents:"
+cat "$TARGET_FILE"
+
+▲ SCRIPT 2: INTERACTIVE DYNAMIC APPENDER (~/kube/scripts/append-dynamic.sh)
+--------------------------------------------------------------------
+#!/bin/sh
+echo "================================================"
+echo "➕ Dynamic Content Appender (Custom Content)"
+echo "================================================"
+printf "👉 Enter the full path of the file to append to: "
+read -r INPUT_PATH
+if [ -z "$INPUT_PATH" ]; then
+    echo "❌ Error: Target file path cannot be empty!"
+    exit 1
+fi
+TARGET_FILE=$(eval echo "$INPUT_PATH")
+if [ ! -f "$TARGET_FILE" ]; then
+    echo "❌ Error: The file '$TARGET_FILE' does not exist."
+    exit 1
+fi
+echo "💬 Enter the text line you want to append:"
+printf "✍️  Append Text: "
+read -r APPEND_CONTENT
+echo "Attaching data layer to: $TARGET_FILE..."
+cat << INNER_EOF >> "$TARGET_FILE"
+[+] Log Entry Added: \$(date)
+[+] Data Payload: $APPEND_CONTENT
+------------------------------------------------
+INNER_EOF
+echo "✅ Content attached successfully! Updated file:"
+cat "$TARGET_FILE"
+===============================================================================
