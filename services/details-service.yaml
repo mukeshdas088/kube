@@ -1,0 +1,43 @@
+apiVersion : apps/v1
+kind : Deployment
+metadata :
+  name : details-deployment-csv
+  labels :
+    app : details-csv
+spec :
+  replicas : 2
+  selector :
+    matchLabels :
+      app : details-csv
+  template :
+    metadata :
+      labels :
+        app : details-csv
+    spec :
+      containers :
+        - name : my-container
+          image : nginx:alpine
+          ports :
+            - containerPort : 80
+          volumeMounts :
+            - name : my-vol
+              mountPath : /usr/share/nginx/html/details.csv
+              subPath : details.csv
+      volumes :
+        - name : my-vol
+          configMap :
+            name : my-config-details
+---
+apiVersion : v1
+kind : Service
+metadata :
+  name : my-svc-details-csv
+spec :
+  type : ClusterIP
+  selector :
+    app : details-csv
+  ports :
+    - protocol : TCP
+      port : 80
+      targetPort : 80
+
