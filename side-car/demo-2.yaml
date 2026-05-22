@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi-agent-pipeline
+  namespace: my-ns
+  labels:
+    app: data-pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-pipeline
+  template:
+    metadata:
+      labels:
+        app: data-pipeline
+    spec:
+      containers:
+        # --- 1. THE ORIGIN GENERATOR (Writes initial data) ---
+        - name: container-1-writer
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mkdir -p /workspace
+              while true; do
+                echo "[Container 1]: Initialized task data at $(date)" > /workspace/shared_data.txt
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+        # --- 2. THE SECOND STAGE AGENT (Appends data) ---
+        - name: container-2-appender
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                if [ -f /workspace/shared_data.txt ]; then
+                  echo "[Container 2]: Appended analytics modeling info" >> /workspace/shared_data.txt
+                fi
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+        # --- 3. THE THIRD STAGE AGENT (Appends data) ---
+        - name: container-3-appender
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                if [ -f /workspace/shared_data.txt ]; then
+                  echo "[Container 3]: Appended data verification signatures" >> /workspace/shared_data.txt
+                fi
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+        # --- 4. THE CONSUMER / WEB APPCATION (Appends, serves, and reads data via logs) ---
+        - name: container-4-final-reader
+          image: alpine:3.18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                if [ -f /workspace/shared_data.txt ]; then
+                  echo "[Container 4]: Final compilation check completed." >> /workspace/shared_data.txt
+                  echo "------------------------------------------------"
+                  cat /workspace/shared_data.txt
+                  echo "================================================"
+                fi
+                sleep 10
+              done
+          volumeMounts:
+            - name: pipeline-storage
+              mountPath: /workspace
+
+      # --- THE CENTRAL WORKSPACE STORAGE ---
+      volumes:
+        - name: pipeline-storage
+          emptyDir: {}
