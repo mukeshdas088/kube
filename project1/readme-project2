@@ -1,0 +1,283 @@
+Here is the complete, cohesive project blueprint. This serves as your finalized, end-to-end documentation draft for building, maintaining, and syncing your High-Fidelity Fuchsia Memory Vault across your multi-node Kubernetes cluster.
+
+1. Project Directory Architecture
+This is how your project files are organized on your controlplane VM node:
+
+Plaintext
+~/kube/
+├── .git/
+├── test-dir/
+│   └── nginx-project.yaml       # Finalized Unified K8s Manifest
+└── project1/
+    ├── readme
+    └── photos/                  # Physical Storage Source (12 Images)
+         ├── 1000002170.jpeg
+         ├── 1000002174.jpeg
+         ├── 20220626071458_IMG_2429.jpg
+         ├── collage_export_24F57CC2-EAC7-46AA-8641-0DC9D42404B6.jpg
+         ├── IMG_0401.JPG
+         ├── IMG_2156_jpg.jpg
+         ├── IMG_2917.JPG
+         ├── IMG_3844.JPG
+         ├── IMG_3925.JPG
+         ├── IMG_4270.jpg
+         ├── IMG_8865_jpg.jpg
+         └── IMG_9929.HEIC
+2. Multi-Node Global Storage Setup
+Because your cluster schedules work across multiple machines (like k8s-worker-1), your media assets must live in a standardized global directory on the worker node where your pods run:
+
+Bash
+# 1. On your Control Plane VM, copy images to a clean cluster directory
+sudo mkdir -p /data/photos
+sudo cp ~/kube/project1/photos/* /data/photos/
+sudo chmod -R 755 /data/photos
+
+# 2. Sync the images over the network to your active Worker Node drive
+sudo scp -r /data/photos/* system@k8s-worker-1:/data/photos/
+
+# 3. SSH into k8s-worker-1 to ensure the background Kubelet account can read them
+ssh system@k8s-worker-1
+sudo chmod -R 755 /data/photos
+exit
+3. The Unified Production Manifest (test-dir/nginx-project.yaml)
+This production file structures your static storage components, builds your responsive CSS gallery layout via a ConfigMap, mounts the directories to your Nginx containers, and isolates access within a secure ClusterIP network:
+
+YAML
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: photo-storage-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /data/photos
+    type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: photo-storage-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 5Gi
+  volumeName: photo-storage-pv
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-html-config
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>My Memories | Vault</title>
+        <style>
+            :root {
+                --bg-color: #0b060f;
+                --card-bg: rgba(255, 255, 255, 0.03);
+                --text-color: #f3f0f5;
+                --fuchsia-accent: #d80073;
+                --fuchsia-glow: rgba(216, 0, 115, 0.4);
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background-color: var(--bg-color);
+                background-image: radial-gradient(circle at 50% -20%, #4a0026 0%, var(--bg-color) 70%);
+                color: var(--text-color);
+                padding: 80px 20px;
+                min-height: 100vh;
+            }
+
+            header {
+                text-align: center;
+                margin-bottom: 70px;
+            }
+
+            header h1 {
+                font-size: 2.8rem;
+                font-weight: 800;
+                letter-spacing: -1px;
+                margin-bottom: 12px;
+                background: linear-gradient(135deg, #ffffff 40%, #ff66b2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+
+            header p {
+                color: #a39bb0;
+                font-size: 1.05rem;
+                letter-spacing: 0.5px;
+            }
+
+            .gallery-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                gap: 40px;
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+
+            .photo-card {
+                background: var(--card-bg);
+                border-radius: 20px;
+                overflow: hidden;
+                border: 1px solid rgba(216, 0, 115, 0.15);
+                box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+                transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+
+            .photo-card:hover {
+                transform: translateY(-8px);
+                border-color: var(--fuchsia-accent);
+                box-shadow: 0 30px 60px var(--fuchsia-glow);
+            }
+
+            .image-wrapper {
+                width: 100%;
+                height: 450px;
+                overflow: hidden;
+                background: #140e1a;
+            }
+
+            .photo-card img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+                transition: transform 0.6s ease;
+            }
+
+            .photo-card:hover img {
+                transform: scale(1.04);
+            }
+
+            .photo-info {
+                padding: 24px;
+                background: linear-gradient(to top, rgba(15, 8, 20, 0.9), rgba(15, 8, 20, 0.4));
+            }
+
+            .photo-info h3 {
+                font-size: 1.2rem;
+                font-weight: 600;
+                margin-bottom: 4px;
+                color: #ffffff;
+            }
+
+            .photo-info p {
+                color: #8b8296;
+                font-size: 0.9rem;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>Captured Memories</h1>
+            <p>A high-fidelity gallery running on isolated cloud infrastructure</p>
+        </header>
+        <main class="gallery-grid">
+
+            <div class="photo-card"><div class="image-wrapper"><img src="images/1000002170.jpeg"></div><div class="photo-info"><h3>01. Dynamic Capture</h3><p>1000002170.jpeg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/1000002174.jpeg"></div><div class="photo-info"><h3>02. Selected Frame</h3><p>1000002174.jpeg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/20220626071458_IMG_2429.jpg"></div><div class="photo-info"><h3>03. Nostalgia Study</h3><p>20220626071458_IMG_2429.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/collage_export_24F57CC2-EAC7-46AA-8641-0DC9D42404B6.jpg"></div><div class="photo-info"><h3>04. Memory Composition</h3><p>collage_export.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_0401.JPG"></div><div class="photo-info"><h3>05. Structural Form</h3><p>IMG_0401.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_2156_jpg.jpg"></div><div class="photo-info"><h3>06. Ambient Stream</h3><p>IMG_2156_jpg.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_2917.JPG"></div><div class="photo-info"><h3>07. Light Alignment</h3><p>IMG_2917.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_3844.JPG"></div><div class="photo-info"><h3>08. Selected View</h3><p>IMG_3844.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_3925.JPG"></div><div class="photo-info"><h3>09. Geometric Phase</h3><p>IMG_3925.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_4270.jpg"></div><div class="photo-info"><h3>10. Chrono Snapshot</h3><p>IMG_4270.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_8865_jpg.jpg"></div><div class="photo-info"><h3>11. Focal Perspective</h3><p>IMG_8865_jpg.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_9929.HEIC"></div><div class="photo-info"><h3>12. High-Efficiency Asset</h3><p>IMG_9929.HEIC</p></div></div>
+
+        </main>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: photography-nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: photography-web
+  template:
+    metadata:
+      labels:
+        app: photography-web
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: html-volume
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+        - name: images-volume
+          mountPath: /usr/share/nginx/html/images
+      volumes:
+      - name: html-volume
+        configMap:
+          name: nginx-html-config
+      - name: images-volume
+        persistentVolumeClaim:
+          claimName: photo-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: photography-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: photography-web
+4. Operational & Deployment Execution
+Execute these commands step-by-step to push changes to your cluster and sync your remote Git repository:
+
+Cluster Application & Rolling Cache Invalidation
+Bash
+# 1. Clean up old immutable structures
+kubectl delete pv photo-storage-pv
+
+# 2. Deploy your clean sheet manifest
+kubectl apply -f test-dir/nginx-project.yaml
+
+# 3. Force Nginx to evict stale runtime code and fetch your new 12-image grid configuration
+kubectl rollout restart deployment/photography-nginx
+
+# 4. Check that your pods go completely green
+kubectl get pods -w
+Git Repository Synchronization (Resolving Out-of-Sync Rejections)
+Bash
+# 1. Pull down changes sitting on GitHub and merge them with your local commits
+git pull origin main --no-rebase
+# Note: If a text prompt opens, save and close to complete the merge.
+
+# 2. Securely push your local 14 file modifications to your github remote repository
+git push origin main
+Launching the Secure Proxy Tunnel to Windows Chrome
+To cross your Host-Only network adapter boundaries safely without using a public Ingress controller, establish this proxy channel:
+
+Bash
+kubectl port-forward svc/photography-service --address 0.0.0.0 8080:80
+Open Google Chrome on Windows and go to your custom local domain: [http://my-nginx.local:8080](http://my-nginx.local:8080) (or [http://192.168.56.101:8080](http://192.168.56.101:8080)). Press Ctrl + F5 once it loads to flush any lingering browser cache!
