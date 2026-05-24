@@ -1,34 +1,152 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: photo-storage-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /data/photos
+    type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: photo-storage-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 5Gi
+  volumeName: photo-storage-pv
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-html-config
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>My Memories | Vault</title>
+        <style>
+            :root {
+                --bg-color: #0b060f;
+                --card-bg: rgba(255, 255, 255, 0.03);
+                --text-color: #f3f0f5;
+                --fuchsia-accent: #d80073;
+                --fuchsia-glow: rgba(216, 0, 115, 0.4);
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background-color: var(--bg-color);
+                background-image: radial-gradient(circle at 50% -20%, #4a0026 0%, var(--bg-color) 70%);
+                color: var(--text-color);
+                padding: 80px 20px;
+                min-height: 100vh;
+            }
+            header { text-align: center; margin-bottom: 70px; }
+            header h1 {
+                font-size: 2.8rem; font-weight: 800; letter-spacing: -1px; margin-bottom: 12px;
+                background: linear-gradient(135deg, #ffffff 40%, #ff66b2 100%);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            }
+            header p { color: #a39bb0; font-size: 1.05rem; letter-spacing: 0.5px; }
+            .gallery-grid {
+                display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 40px; max-width: 1200px; margin: 0 auto;
+            }
+            .photo-card {
+                background: var(--card-bg); border-radius: 20px; overflow: hidden; border: 1px solid rgba(216, 0, 115, 0.15);
+                box-shadow: 0 20px 40px rgba(0,0,0,0.4); transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .photo-card:hover {
+                transform: translateY(-8px); border-color: var(--fuchsia-accent); box-shadow: 0 30px 60px var(--fuchsia-glow);
+            }
+            .image-wrapper { width: 100%; height: 450px; overflow: hidden; background: #140e1a; }
+            .photo-card img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.6s ease; }
+            .photo-card:hover img { transform: scale(1.04); }
+            .photo-info { padding: 24px; background: linear-gradient(to top, rgba(15, 8, 20, 0.9), rgba(15, 8, 20, 0.4)); }
+            .photo-info h3 { font-size: 1.2rem; font-weight: 600; margin-bottom: 4px; color: #ffffff; }
+            .photo-info p { color: #8b8296; font-size: 0.9rem; }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>Captured Memories</h1>
+            <p>Complete Collection | 12 Architectural Visuals</p>
+        </header>
+        <main class="gallery-grid">
+
+            <div class="photo-card"><div class="image-wrapper"><img src="images/1000002170.jpeg"></div><div class="photo-info"><h3>01. Dynamic Capture</h3><p>1000002170.jpeg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/1000002174.jpeg"></div><div class="photo-info"><h3>02. Selected Frame</h3><p>1000002174.jpeg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/20220626071458_IMG_2429.jpg"></div><div class="photo-info"><h3>03. Nostalgia Study</h3><p>20220626071458_IMG_2429.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/collage_export_24F57CC2-EAC7-46AA-8641-0DC9D42404B6.jpg"></div><div class="photo-info"><h3>04. Memory Composition</h3><p>collage_export.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_0401.JPG"></div><div class="photo-info"><h3>05. Structural Form</h3><p>IMG_0401.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_2156_jpg.jpg"></div><div class="photo-info"><h3>06. Ambient Stream</h3><p>IMG_2156_jpg.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_2917.JPG"></div><div class="photo-info"><h3>07. Light Alignment</h3><p>IMG_2917.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_3844.JPG"></div><div class="photo-info"><h3>08. Selected View</h3><p>IMG_3844.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_3925.JPG"></div><div class="photo-info"><h3>09. Geometric Phase</h3><p>IMG_3925.JPG</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_4270.jpg"></div><div class="photo-info"><h3>10. Chrono Snapshot</h3><p>IMG_4270.jpg</p></div></div>
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_8865_jpg.jpg"></div><div class="photo-info"><h3>11. Focal Perspective</h3><p>IMG_8865_jpg.jpg</p></div></div>
+            
+            <!-- Note: HEIC files may require a plugin to view natively in some browsers -->
+            <div class="photo-card"><div class="image-wrapper"><img src="images/IMG_9929.HEIC"></div><div class="photo-info"><h3>12. High-Efficiency Asset</h3><p>IMG_9929.HEIC</p></div></div>
+
+        </main>
+    </body>
+    </html>
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nginx-deployment
-  labels:
-    app: demo-nginx
+  name: photography-nginx
 spec:
-  replicas: 2 # Spins up exactly 2 pods
+  replicas: 2
   selector:
     matchLabels:
-      tier: frontend
+      app: photography-web
   template:
     metadata:
       labels:
-        tier: frontend
+        app: photography-web
     spec:
       containers:
-      - name: nginx-container
-        image: nginx:latest
+      - name: nginx
+        image: nginx:alpine
         ports:
         - containerPort: 80
+        volumeMounts:
+        - name: html-volume
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+        - name: images-volume
+          mountPath: /usr/share/nginx/html/images
+      volumes:
+      - name: html-volume
+        configMap:
+          name: nginx-html-config
+      - name: images-volume
+        persistentVolumeClaim:
+          claimName: photo-storage-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: nginx-internal-service
+  name: photography-service
 spec:
-  type: ClusterIP # Keeps the service internal to the cluster virtual network
+  type: ClusterIP
   ports:
-  - port: 80        # The port exposed on the service IP
-    targetPort: 80  # The port it looks for inside the nginx containers
+  - port: 80
+    targetPort: 80
+    protocol: TCP
   selector:
-    tier: frontend  # Matches the label assigned to our deployment pods
-
+    app: photography-web
