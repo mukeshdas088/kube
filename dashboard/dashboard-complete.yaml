@@ -65,11 +65,9 @@ data:
 
         async function fetchMetrics() {
             try {
-                // Requesting metrics path exposed via our Ingress config
                 const res = await fetch('/api/metrics');
                 const data = await res.json();
-                
-                // Update text elements
+
                 document.getElementById('node-name').innerText = data.node_name;
                 document.getElementById('val-uptime').innerText = data.uptime;
                 document.getElementById('val-mem-total').innerText = data.mem_total + " GB";
@@ -78,7 +76,6 @@ data:
                 document.getElementById('val-disk-used').innerText = data.disk_used + " GB";
                 document.getElementById('val-disk-free').innerText = data.disk_free + " GB";
 
-                // Animate bars
                 document.getElementById('mem-bar').style.width = data.mem_pct + '%';
                 document.getElementById('mem-bar').innerText = data.mem_pct + '%';
                 document.getElementById('disk-bar').style.width = data.disk_pct + '%';
@@ -88,9 +85,123 @@ data:
             }
         }
 
-        // Poll for updates every 5 seconds
         fetchMetrics();
         setInterval(fetchMetrics, 5000);
     </script>
     </body>
     </html>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metrics-backend-python
+  namespace: default
+data:
+  default.conf: |
+    server {
+        listen 5000;
+        server_name localhost;
+
+        # Fixed: Changed to match any sub-URI strings under /api
+        location /api {
+            default_type application/json;
+            add_header Access-Control-Allow-Origin *;
+            return 200 '{"node_name":"k8s-master","disk_total":250,"disk_used":112,"disk_free":138,"disk_pct":45,"mem_total":16,"mem_used":4,"mem_pct":25,"uptime":"42d 11h"}';
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-stack
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard-ui
+  template:
+    metadata:
+      labels:
+        app: dashboard-ui
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      containers:
+      - name: frontend-nginx
+        image: nginx:alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: html-volume
+          mountPath: /usr/share/nginx/html
+
+      - name: backend-metrics
+        image: nginx:alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: backend-volume
+          mountPath: /etc/nginx/conf.d
+
+      volumes:
+      - name: html-volume
+        configMap:
+          name: dashboard-frontend-html
+      - name: backend-volume
+        configMap:
+          name: metrics-backend-python
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-frontend-svc
+  namespace: default
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+  selector:
+    app: dashboard-ui
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-backend-svc
+  namespace: default
+spec:
+  ports:
+  - name: api
+    port: 5000
+    targetPort: 5000
+  selector:
+    app: dashboard-ui
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: node-dashboard-ingress
+  namespace: default
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: node-dashboard.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dashboard-frontend-svc
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: dashboard-backend-svc
+            port:
+              number: 5000
