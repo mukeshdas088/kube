@@ -1,0 +1,32 @@
+If your code text is still showing up as plain white text without any color changes inside your Virtual Machine, it means the actual syntax definition files are missing from your Linux system.
+
+By default, Nano needs those files to know what words (like `if`, `while`, or `import`) to colorize.
+
+---
+
+### 🛠️ The Fix: Download the Official Nano Syntax Pack
+
+You can easily pull the complete, up-to-date syntax highlighting pack directly from GitHub into your VM. Run these three commands inside your VM terminal:
+
+```bash
+# 1. Create a local folder for the syntax files if it doesn't exist
+mkdir -p ~/.nano
+
+# 2. Clone the official collection of Nano syntax files
+git clone https://github.com/scopatz/nanorc.git ~/.nano/syntax
+
+# 3. Tell Nano to read these new files by updating your config
+echo "include ~/.nano/syntax/*.nanorc" >> ~/.nanorc
+
+```
+
+### 🔄 Apply the Changes
+
+Once you run those commands, close your current Nano editor and reopen your code file:
+
+```bash
+nano yourfile.py  # (or .js, .sh, .html, etc.)
+
+```
+
+Your syntax highlighting should now be active. If you are still seeing plain white text after running this, what specific operating system (e.g., Ubuntu, CentOS, Debian) is running inside your VM?

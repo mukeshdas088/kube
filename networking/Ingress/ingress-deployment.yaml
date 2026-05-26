@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app1
+  labels:
+    env: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      env: prod
+  template:
+    metadata:
+      labels:
+        env: prod
+    spec:
+      containers:
+        - name: my-container-hashicorp-appv1
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello , Welcome to App1 "
+            - "-listen=:80"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app1-svc
+spec:
+  selector:
+    env: prod
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app2
+  labels:
+    env: prod-v12
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      env: prod-v12
+  template:
+    metadata:
+      labels:
+        env: prod-v12
+    spec:
+      containers:
+        - name: my-container-hashicorp-appv2
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello, Welcome to App2"
+            - "-listen=:80"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app2-svc
+spec:
+  selector:
+    env: prod-v12
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - my-app.com                      # Fixed: Aligned list token spaces
+      secretName: my-app-tls-secret
+  rules:
+    - host: my-app.com
+      http:
+        paths:
+          - path: /app1
+            pathType: Prefix
+            backend:
+              service:
+                name: app1-svc
+                port:
+                  number: 80
+          - path: /app2                   # Fixed: Cleared irregular layout spaces
+            pathType: Prefix
+            backend:
+              service:
+                name: app2-svc
+                port:
+                  number: 80

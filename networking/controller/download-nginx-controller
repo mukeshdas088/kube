@@ -1,0 +1,3 @@
+curl -o ingress-nginx.yaml https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+
+kubectl apply -f ingress-nginx.yaml

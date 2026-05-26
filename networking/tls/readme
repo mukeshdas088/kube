@@ -1,0 +1,21 @@
+We will use OpenSSL to create a private key and a self-signed certificate valid for 365 days, specifically generated for your local domain name my-app.com.
+
+Run this command on your controlplane terminal:
+
+Bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout ~/kube/networking/Ingress/my-app.key \
+    -out ~/kube/networking/Ingress/my-app.crt \
+      -subj "/CN=my-app.com/O=LocalLab"
+      This creates two files in your folder: my-app.key (your private key) and my-app.crt (your public certificate).
+
+      Step 2: Store the Certificate in a Kubernetes Secret
+      An Ingress resource cannot read raw certificate files directly from the Linux hard drive. It requires them to be securely stored inside the cluster as a TLS Secret.
+
+      Run this command to import your fresh keys into your active namespace:
+
+      Bash
+      kubectl create secret tls my-app-tls-secret \
+        --cert=/home/system/kube/networking/Ingress/my-app.crt \
+          --key=/home/system/kube/networking/Ingress/my-app.key
+          Step 3: Update the Ingress Resource with the TLS Block

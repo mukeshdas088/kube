@@ -1,0 +1,289 @@
+[10:51:43] system@controlplane:~/kube/networking/Ingress$ kubectl get  all
+NAME                       READY   STATUS    RESTARTS   AGE
+pod/app1-79996d557-qxwq8   1/1     Running   0          114s
+pod/app2-fb99945b9-vcznm   1/1     Running   0          11m
+
+NAME                 TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+service/app1-svc     ClusterIP   10.111.38.31   <none>        80/TCP    48m
+service/app2-svc     ClusterIP   10.110.5.3     <none>        80/TCP    48m
+service/kubernetes   ClusterIP   10.96.0.1      <none>        443/TCP   14h
+
+NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/app1   1/1     1            1           48m
+deployment.apps/app2   1/1     1            1           48m
+
+NAME                              DESIRED   CURRENT   READY   AGE
+replicaset.apps/app1-6767854654   0         0         0       48m
+replicaset.apps/app1-79996d557    1         1         1       114s
+replicaset.apps/app1-886bb4cdf    0         0         0       11m
+replicaset.apps/app2-57c67d6786   0         0         0       48m
+replicaset.apps/app2-fb99945b9    1         1         1       11m
+[10:51:47] system@controlplane:~/kube/networking/Ingress$ kubectl get svc -n ingress-nginx
+NAME                                 TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)                      AGE
+ingress-nginx-controller             LoadBalancer   10.108.56.194   <pending>     80:31940/TCP,443:30517/TCP   63m
+ingress-nginx-controller-admission   ClusterIP      10.104.21.10    <none>        443/TCP                      63m
+[10:52:04] system@controlplane:~/kube/networking/Ingress$ kubectl get pods -n ingress-nginx
+NAME                                       READY   STATUS    RESTARTS   AGE
+ingress-nginx-controller-c74ccf678-d77ld   1/1     Running   0          63m
+
+
+
+
+
+
+
+
+Everything looks absolutely perfect. Both application pods are Running, your internal ClusterIP services are live, and your ingress-nginx-controller is tracking with the updated configuration.
+
+Based on your current service output, you can now access both applications securely over HTTPS directly from your Windows web browser.
+
+Your Secure HTTPS URLs for Windows Browser
+Since your Ingress Controller exposes TLS traffic via NodePort fallback on port 30517 (mapped from port 443), copy and paste these exact links into your Chrome, Edge, or Firefox browser:
+
+🔒 App 1 (Secure): ```text
+https://my-app.com:30517/app1
+
+🔒 App 2 (Secure): ```text
+https://my-app.com:30517/app2
+
+
+⚠️ Quick Reminder on the Browser Warning
+When the page loads, your browser will flash a warning saying "Your connection is not private" or NET::ERR_CERT_AUTHORITY_INVALID.
+
+Don't worry, this is exactly what we expect! It means your OpenSSL configuration worked flawlessly. Because it's a self-signed lab certificate, you just need to:
+
+Click Advanced.
+
+Click Proceed to my-app.com (unsafe).
+
+Once you click proceed, the browser will render your messages encrypted over an active TLS layer!
+
+
+
+
+
+===================================================================
+📖 KUBERNETES LAB ROUTING DOCUMENTATION & BACKUP MANIFESTS
+===================================================================
+
+Save this as ingress-plain-http.yaml:
+-------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app1
+  labels:
+    env: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      env: prod
+  template:
+    metadata:
+      labels:
+        env: prod
+    spec:
+      containers:
+        - name: my-container-hashicorp-appv1
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello , Welcome to App1 "
+            - "-listen=:80"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app1-svc
+spec:
+  selector:
+    env: prod
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app2
+  labels:
+    env: prod-v12
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      env: prod-v12
+  template:
+    metadata:
+      labels:
+        env: prod-v12
+    spec:
+      containers:
+        - name: my-container-hashicorp-appv2
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello, Welcome to App2"
+            - "-listen=:80"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app2-svc
+spec:
+  selector:
+    env: prod-v12
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: my-app.com
+      http:
+        paths:
+          - path: /app1
+            pathType: Prefix
+            backend:
+              service:
+                name: app1-svc
+                port:
+                  number: 80
+          - path: /app2
+            pathType: Prefix
+            backend:
+              service:
+                name: app2-svc
+                port:
+                  number: 80
+
+
+Manifest 2: With TLS (Encrypted HTTPS Router)
+-------------------------------------------------------------------
+This manifest includes the exact tls: array section (with the correct space counts) mapping to your my-app-tls-secret. It terminates SSL handshakes securely on your node's port 30517.
+
+Save this as ingress-secure-tls.yaml:
+-------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app1
+  labels:
+    env: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      env: prod
+  template:
+    metadata:
+      labels:
+        env: prod
+    spec:
+      containers:
+        - name: my-container-hashicorp-appv1
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello , Welcome to App1 "
+            - "-listen=:80"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app1-svc
+spec:
+  selector:
+    env: prod
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app2
+  labels:
+    env: prod-v12
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      env: prod-v12
+  template:
+    metadata:
+      labels:
+        env: prod-v12
+    spec:
+      containers:
+        - name: my-container-hashicorp-appv2
+          image: hashicorp/http-echo
+          args:
+            - "-text=Hello, Welcome to App2"
+            - "-listen=:80"
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app2-svc
+spec:
+  selector:
+    env: prod-v12
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - my-app.com
+      secretName: my-app-tls-secret
+  rules:
+    - host: my-app.com
+      http:
+        paths:
+          - path: /app1
+            pathType: Prefix
+            backend:
+              service:
+                name: app1-svc
+                port:
+                  number: 80
+          - path: /app2
+            pathType: Prefix
+            backend:
+              service:
+                name: app2-svc
+                port:
+                  number: 80
+
+Quick Switching commands:
+-------------------------------------------------------------------
+When you want to switch your entire environment back and forth, you don't need to delete anything else. Just apply the target file directly over the existing configuration, and Kubernetes will handle the hot-reload instantly:
+
+To go plain text:  kubectl apply -f ingress-plain-http.yaml
+To go secure TLS:  kubectl apply -f ingress-secure-tls.yaml
