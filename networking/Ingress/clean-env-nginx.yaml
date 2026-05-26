@@ -1,0 +1,46 @@
+echo "================================================================="
+echo "💣 EXECUTING TOTAL KUBERNETES ENVIRONMENT PURGE"
+echo "================================================================="
+
+# 1. Reset namespace context to default
+echo "🔄 Resetting active context to default namespace..."
+kubectl config set-context --current --namespace=default
+
+# 2. Delete all Ingress rules globally
+echo "🌐 Purging all custom Ingress objects..."
+kubectl delete ingress --all --all-namespaces --timeout=30s
+
+# 3. Delete the Ingress Controller Infrastructure Namespace
+echo "🧱 Dismantling Nginx Ingress Controller namespace..."
+kubectl delete namespace ingress-nginx --timeout=60s --ignore-not-found
+
+# 4. Clean up workloads in the default namespace
+echo "🧹 Wiping all Deployments, Pods, Services, and ReplicaSets from 'default'..."
+kubectl delete deployment,statefulset,daemonset,replicaset,pods,services --all -n default --timeout=60s --ignore-not-found
+
+# 5. Clear Storage Layers
+echo "💾 Dropping persistent storage footprints (PVCs and PVs)..."
+kubectl delete pvc --all --all-namespaces --timeout=30s --ignore-not-found
+kubectl delete pv --all --timeout=30s --ignore-not-found
+
+# 6. Delete the TLS Secret created for my-app.com
+echo "🔑 Deleting custom TLS secrets..."
+kubectl delete secret my-app-tls-secret -n default --ignore-not-found
+
+# 7. Identify and delete custom user namespaces (Protecting system essentials)
+echo "📦 Scraping lingering custom namespaces..."
+PROTECTED_NS="default|kube-system|kube-public|kube-node-lease|calico-system|calico-apiserver|tigera-operator"
+CUSTOM_NS=$(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -vE "^(${PROTECTED_NS})$")
+
+if [ -n "$CUSTOM_NS" ]; then
+    for ns in $CUSTOM_NS; do
+            echo "🗑️ Removing namespace: $ns"
+                    kubectl delete namespace "$ns" --wait=false
+                        done
+                        else
+                            echo "ℹ️ No custom user namespaces left to clean."
+                            fi
+
+                            echo "================================================================="
+                            echo "✨ CLUSTER ENVIRONMENT SUCCESSFULLY RESET TO BASELINE!"
+                            echo "================================================================="

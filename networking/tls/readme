@@ -16,6 +16,11 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 
       Bash
       kubectl create secret tls my-app-tls-secret \
-        --cert=/home/system/kube/networking/Ingress/my-app.crt \
-          --key=/home/system/kube/networking/Ingress/my-app.key
+        --cert=/home/system/kube/networking/tls/my-app.crt \
+          --key=/home/system/kube/networking/tls/my-app.key
           Step 3: Update the Ingress Resource with the TLS Block
+
+[19:29:17] system@controlplane:~/kube/networking/tls$ curl -k -H "Host: my-app.com" https://192.168.31.157:32266/app1
+Hello , Welcome to App1
+[19:30:07] system@controlplane:~/kube/networking/tls$ curl -k -H "Host: my-app.com" https://192.168.31.157:32266/app2
+Hello, Welcome to App2
