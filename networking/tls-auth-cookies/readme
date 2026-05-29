@@ -1,0 +1,126 @@
+Step 1: Create the Project Directories
+Bash
+mkdir -p ~/kube/networking/tls-auth-cookies
+cd ~/kube/networking/tls-auth-cookies
+Step 2: Generate the Self-Signed TLS Certificate
+Bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout my-app.key \
+  -out my-app.crt \
+  -subj "/CN=secure-app.com/O=secure-app"
+
+# Save it as a Kubernetes TLS Secret
+kubectl create secret tls my-app-tls-secret \
+  --cert=my-app.crt \
+  --key=my-app.key
+Step 3: Create the Basic Authentication Credentials
+Bash
+# Generate the raw password text file ('admin' / 'SuperSecretPassword')
+htpasswd -b -c auth admin SuperSecretPassword
+
+# Save it as a generic secret (NGINX strictly requires the internal key to be named 'auth')
+kubectl create secret generic secure-app-auth \
+  --from-file=auth=auth
+Step 4: Write the Unified Manifest (stickyness.yaml)
+Run this exact block to write your complete infrastructure stack into a single file:
+
+Bash
+cat << 'EOF' > stickyness.yaml
+# app-deploy.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secure-app-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: secure-app
+  template:
+    metadata:
+      labels:
+        app: secure-app
+    spec:
+      containers:
+      - name: http-echo
+        image: hashicorp/http-echo
+        args: ["-text=Welcome to the Secret Vault !!", "-listen=:80"]
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: secure-app-svc
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: secure-app
+---
+# ingress-secure.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: secure-app-ingress
+  annotations:
+    # ─── BASIC AUTH CONFIGURATION ────────────────────────────────────
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: "secure-app-auth"
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required - Secure Vault"
+
+    # ─── SESSION STICKINESS CONFIGURATION ────────────────────────────
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "route-cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "balanced"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "300"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
+spec:
+  ingressClassName: "nginx"
+  tls:
+  - hosts:
+    - "secure-app.com"
+    secretName: "my-app-tls-secret"
+  rules:
+  - host: "secure-app.com"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: secure-app-svc
+            port:
+              number: 80
+EOF
+Step 5: Clean the Cluster Environment and Deploy
+Bash
+# Wipe out any lingering configurations to prevent state corruption
+kubectl delete ingress secure-app-ingress --ignore-not-found=true
+
+# Apply your unified architecture stack
+kubectl apply -f stickyness.yaml
+Step 6: Verify and Extract Routing Details
+Bash
+# Ensure all 3 backend Pod endpoints are active and assigned an IP
+kubectl get endpoints secure-app-svc
+
+# Extract your exact ingress-nginx NodePort mapped to HTTPS (443)
+kubectl get svc -n ingress-nginx
+Step 7: Test and Track Sticky Behaviors
+Assuming your cluster node IP is 192.168.31.157 and your extracted HTTPS port is 30138:
+
+Bash
+# 1. Initial hit: Authenticate and write cookies to a local tracking jar
+curl -k -u "admin:SuperSecretPassword" -H "Host: secure-app.com" \
+     -c cookies.txt \
+     https://192.168.31.157:30138/ -i
+
+# 2. Run sequential loops utilizing the saved session cookie jar
+for i in {1..5}; do 
+  curl -k -u "admin:SuperSecretPassword" -H "Host: secure-app.com" \
+       -b cookies.txt \
+       https://192.168.31.157:30138/
+  echo ""
+done

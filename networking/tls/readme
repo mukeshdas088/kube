@@ -24,3 +24,37 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 Hello , Welcome to App1
 [19:30:07] system@controlplane:~/kube/networking/tls$ curl -k -H "Host: my-app.com" https://192.168.31.157:32266/app2
 Hello, Welcome to App2
+
+
+Patching Ingress TLS Configurations
+What it is: An inline method to attach, modify, or swap out SSL/TLS termination certificates on an existing Ingress resource.
+
+What it does: Updates the spec.tls block using a JSON patch to secure external HTTP traffic with HTTPS without needing to redeploy or edit the entire Ingress manifest.
+
+Imperative Commands
+1. Add or Overwrite the TLS Secret and Host
+If you want to completely replace or set the TLS configuration, you can use a Strategic Merge Patch. This will update (or add) the first element in the TLS array:
+
+
+
+kubectl patch ingress advanced-ingress -p '{"spec":{"tls":[{"hosts":["app.exam.com"],"secretName":"domain-tls-secret"}]}}'
+
+Imperative Commands (Strategic Merge Patching)
+Bash
+# 1. Scale a deployment instantly by patching the replica count
+kubectl patch deployment web-deploy -p '{"spec":{"replicas":5}}'
+
+# 2. Update a running container's image tag using inline nested JSON
+kubectl patch deployment web-deploy -p '{"spec":{"template":{"spec":{"containers":[{"name":"nginx","image":"nginx:1.19.0"}]}}}}'
+
+# 3. Patch a Pod to add or change a label dynamically
+kubectl patch pod exam-pod -p '{"metadata":{"labels":{"tier":"frontend"}}}'
+
+# 4. Inject an environment variable into a deployment's container template
+kubectl patch deployment web-deploy -p '{"spec":{"template":{"spec":{"containers":[{"name":"nginx","env":[{"name":"ENV_MODE","value":"production"}]}]}}}}'
+
+# 5. Update resource memory requests and limits for a container template
+kubectl patch deployment web-deploy -p '{"spec":{"template":{"spec":{"containers":[{"name":"nginx","resources":{"requests":{"memory":"128Mi"},"limits":{"memory":"256Mi"}}}]}}}}'
+
+# 6. Patch an Ingress resource to switch its backend service target port
+kubectl patch ingress advanced-ingress --type='json' -p='[{"op": "replace", "path": "/spec/rules/0/http/paths/0/backend/service/port/number", "value": 8080}]'
