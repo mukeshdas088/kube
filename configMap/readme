@@ -1,0 +1,51 @@
+- uses configmap :
+- as mount as volume (we can create --from-file=file_name.txt) - spec.volumes.configMap.name
+- as env (a single item) - (create using --from-literal=key=value) - need to use env 
+- as env whole file - (multiple items) --from-env-file - only configMapRef
+
+1. Mounted as a Volume (From Files)This method is used when you want the configuration data to appear as files on the container's file system.Imperative Creation:bashkubectl create configmap my-volume-config --from-file=file_name.txt
+Use code with caution.Pod Specification Blueprint:yamlapiVersion: v1
+kind: Pod
+metadata:
+  name: volume-config-pod
+spec:
+  containers:
+  - name: app-container
+    image: nginx
+    volumeMounts:
+    - name: config-volume
+      mountPath: /etc/config     # The directory where the file will appear
+  volumes:
+  - name: config-volume
+    configMap:
+      name: my-volume-config     # Must match your ConfigMap name
+Use code with caution.2. As an Environment Variable (Single Item)This pattern injects a specific single key-value pair into the container as an isolated environment variable.Imperative Creation:bashkubectl create configmap my-single-env-config --from-literal=DB_PORT=5432
+Use code with caution.Pod Specification Blueprint:yamlapiVersion: v1
+kind: Pod
+metadata:
+  name: single-env-pod
+spec:
+  containers:
+  - name: app-container
+    image: nginx
+    command : ["/bin/sh","-c"]
+    args :
+        - echo "port = $DATABASE_PORT";sleep 3600
+    env:
+    - name: DATABASE_PORT        # The name inside your container
+      valueFrom:
+        configMapKeyRef:
+          name: my-single-env-config
+          key: DB_PORT           # The exact key stored inside the ConfigMap
+Use code with caution.3. As Environment Variables (Whole File / Multiple Items)This strategy parses an entire environment file (containing KEY=VALUE rows) and exposes every line as an individual environment variable inside the container.Imperative Creation:bashkubectl create configmap my-all-env-config --from-env-file=.env
+Use code with caution.Pod Specification Blueprint:yamlapiVersion: v1
+kind: Pod
+metadata:
+  name: all-env-pod
+spec:
+  containers:
+  - name: app-container
+    image: nginx
+    envFrom:                     # Notice it is envFrom instead of env
+    - configMapRef:              # Notice it is configMapRef, not configMapKeyRef
+        name: my-all-env-config

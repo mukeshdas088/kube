@@ -1,0 +1,3 @@
+app=red
+username=mac_admin
+data=/sdb

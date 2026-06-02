@@ -1,0 +1,17 @@
+apiVersion : v1
+kind : Pod
+metadata :
+  name : my-pod-cw
+  namespace : cw-ns
+spec :
+  volumes :
+      - name : cm-map
+        configMap:
+            name : my-config
+  containers :
+      - name : my-cont
+        image : nginx
+        volumeMounts :
+            - name : cm-map
+              mountPath : /etc/config
+
