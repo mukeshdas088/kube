@@ -1,0 +1,62 @@
+kubectl taint nodes <node-name> gpu=true:NoSchedule
+kubectl describe node <node-name> | grep Taints
+kubectl run untolerated-pod --image=nginx
+kubectl get pods
+
+Imperatively create a pod that tolerates the gpu=true taint. You can accomplish this in one line using kubectl run with inline arguments:
+
+kubectl run gpu-pod --image=nginx --overrides='{"spec":{"tolerations":[{"key":"gpu","operator":"Equal","value":"true","effect":"NoSchedule"}]}}'
+OR
+kubectl taint NODE NAME KEY_1=VAL_1:TAINT_EFFECT_1 ... KEY_N=VAL_N:TAINT_EFFECT_N
+
+=============
+
+# Update node 'foo' with a taint with key 'dedicated' and value 'special-user' and effect 'NoSchedule'
+# If a taint with that key and effect already exists, its value is replaced as specified
+kubectl taint nodes foo dedicated=special-user:NoSchedule
+# Remove from node 'foo' the taint with key 'dedicated' and effect 'NoSchedule' if one exists
+kubectl taint nodes foo dedicated:NoSchedule-
+# Remove from node 'foo' all the taints with key 'dedicated'
+kubectl taint nodes foo dedicated-
+# Add a taint with key 'dedicated' on nodes having label myLabel=X
+kubectl taint node -l myLabel=X  dedicated=foo:PreferNoSchedul
+# Add to node 'foo' a taint with key 'bar' and no value
+kubectl taint nodes foo bar:NoSchedule
+
+=============
+
+Users can specify any arbitrary string for the taint key and value. 
+The taint effect defines how a tainted node reacts to a pod without appropriate toleration. 
+It must be one of the following effects;
+
+NoSchedule — The pod will not get scheduled to the node without a matching toleration.
+
+NoExecute — This will immediately evict all the pods without the matching toleration from the node.
+
+PerferNoSchedule — This is a softer version of NoSchedule where the controller will not try to schedule a pod with the tainted node. 
+                   However, it is not a strict requirement.
+=============
+
+Standard Toleration ConfigurationTo configure a pod to tolerate a taint, add a tolerations list under spec in your pod's manifest:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-tolerated-pod
+spec:
+  containers:
+  - name: my-container
+    image: nginx
+  tolerations:
+  - key: "my-key"
+    operator: "Equal"
+    value: "my-value"
+    effect: "NoSchedule"
+
+
+You cannot add a toleration directly to an existing pod using a simple imperative command like kubectl patch or kubectl edit 
+because pod tolerations are immutable after creation.
+
+kubectl patch deployment my-deploy -p '{"spec":{"template":{"spec":{"tolerations":[{"key":"my-key","operator":"Equal","value":"my-value","effect":"NoSchedule"}]}}}}'
+
+
