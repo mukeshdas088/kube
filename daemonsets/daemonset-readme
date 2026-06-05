@@ -1,0 +1,22 @@
+The Imperative PipelineRun this command in your terminal:Bash
+kubectl create deployment my-ds --image=nginx:alpine --dry-run=client -o yaml | \
+sed 's/kind: Deployment/kind: DaemonSet/g' | \
+sed '/replicas:/d' | \
+sed 's/strategy:/updateStrategy:/g' | \
+
+kubectl apply -f -
+
+Breakdown of the Steps1.
+Step 1: Run as dry-run client:kubectl create ... 
+--dry-run=client.We use kubectl create deployment to generate a valid Kubernetes manifest in memory. 
+The --dry-run=client flag ensures nothing is actually created in the cluster yet, and -o yaml outputs the text for us to edit.2.
+
+Step 2: Edit Kind, Replicas, and Strategy:The sed manipulation.We pipe the output into three sed commands:Kind: 
+Changes kind: Deployment to kind: DaemonSet.Replica: Deletes the line containing replicas: X (DaemonSets don't use this).Strategy: Renames the strategy: block to updateStrategy:, which is the correct field name for DaemonSets.3.Step 3: Execute:kubectl apply -f -.The final pipe | kubectl apply -f - takes the modified text and sends it to the Kubernetes API to create the live resource.VerificationOnce executed, verify that the DaemonSet has successfully deployed one pod to every available node:Bashkubectl get daemonset my-ds
+
+kubectl get pods -o wide -l app=my-ds
+
+Note: If you are running this on a single-node cluster (like Minikube or Docker Desktop) and your nodes have "taints" (common on control-plane nodes), you may need to add tolerations to the YAML if the pods stay in Pending. Since this is a one-liner, you'd usually add those via kubectl edit ds my-ds after the initial creation.
+
+
+
