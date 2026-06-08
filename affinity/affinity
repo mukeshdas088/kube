@@ -1,0 +1,213 @@
+Here is a complete, hands-on demo that combines Node Affinity and Pod Affinity into a single deployment scenario.
+The Scenario
+Imagine you are deploying a secure data processing pipeline:
+	1	We have a Database Pod that strictly requires high-performance storage (Hard Node Affinity).
+	2	We have an API/Processing Pod that prefers to sit on the exact same machine as the Database to avoid network latency (Soft Pod Affinity).
+Step 1: Prepare the Nodes
+First, let's see your available nodes:
+Bash
+
+
+
+
+kubectl get nodes
+Let's simulate a cluster where one node has high-performance SSDs. We will label worker-node-1 with disktype=ssd:
+Bash
+
+
+
+
+
+
+kubectl label nodes worker-node-1 disktype=ssd
+Step 2: Deploy the Database (Hard Node Affinity)
+We will deploy the database first. It uses Hard Node Affinity because it absolutely cannot function efficiently without an SSD.
+Create a file named database-pod.yaml:
+YAML
+
+
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-db
+  labels:
+    app: database # <-- This label is crucial for the next step!
+spec:
+  containers:
+  - name: redis
+    image: redis:alpine
+  affinity:
+    nodeAffinity:
+      # HARD NODE AFFINITY: Must land on an SSD node
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: disktype
+            operator: In
+            values:
+            - ssd
+Deploy the database:
+Bash
+
+
+
+
+kubectl apply -f database-pod.yaml
+Check where it landed. Because of the hard node affinity, it will be forced onto worker-node-1:
+Bash
+
+
+
+
+kubectl get pods -o wide
+Output:
+Plaintext
+
+
+
+
+NAME        READY   STATUS    RESTARTS   AGE   NODE
+secure-db   1/1     Running   0          10s   worker-node-1
+Step 3: Deploy the API Worker (Soft Pod Affinity)
+Now, we want to deploy our API worker. We want it to sit on the same physical node as the database (secure-db) to eliminate network lag. However, if that node runs out of CPU or RAM, we don't want our API to break; it should just fall back to another node. This is a perfect job for Soft Pod Affinity.
+Create a file named api-pod.yaml:
+YAML
+
+
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api-worker
+spec:
+  containers:
+  - name: web-api
+    image: nginx:alpine
+  affinity:
+    podAffinity:
+      # SOFT POD AFFINITY: Prefer to be close to the database
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - database # Looks for the label we gave the DB pod
+          topologyKey: kubernetes.io/hostname # Prefers the exact same machine
+Deploy the API worker:
+Bash
+
+
+
+
+kubectl apply -f api-pod.yaml
+Step 4: Verify the Co-location
+Now, let's check the placement of both pods together:
+Bash
+
+
+
+
+kubectl get pods -o wide
+Your output should look like this:
+Plaintext
+
+
+
+
+NAME         READY   STATUS    RESTARTS   AGE   NODE
+api-worker   1/1     Running   0          5s    worker-node-1
+secure-db    1/1     Running   0          2m    worker-node-1
+Why did this happen?
+	1	secure-db looked at the cluster, saw that only worker-node-1 had disktype=ssd, and scheduled there.
+	2	api-worker looked at the cluster and saw that a pod with the label app=database was running on worker-node-1. Because of its soft affinity preference (and high weight of 100), the scheduler scored worker-node-1 higher than any other node and placed it there too.
+Clean Up
+When you are done testing, run the following commands to delete the pods and strip the custom label off your node:
+Bash
+
+
+
+
+# Delete pods
+kubectl delete pod secure-db api-worker
+
+# Remove node label
+kubectl label nodes worker-node-1 disktype-
+
+
+[12:47:47] system@controlplane:~/kube/affinity$ k get nodes
+k NAME           STATUS                     ROLES           AGE   VERSION
+k8s-master     Ready                      control-plane   27d   v1.30.14
+k8s-worker-1   Ready,SchedulingDisabled   <none>          27d   v1.30.14
+[12:47:57] system@controlplane:~/kube/affinity$ k uncordon k8s-worker-1
+node/k8s-worker-1 uncordoned
+[12:48:22] system@controlplane:~/kube/affinity$ k get nodes
+NAME           STATUS   ROLES           AGE   VERSION
+k8s-master     Ready    control-plane   27d   v1.30.14
+k8s-worker-1   Ready    <none>          27d   v1.30.14
+[12:51:00] system@controlplane:~/kube/affinity$ k label nodes k8s-workeer-1 disktype=ssd
+Error from server (NotFound): nodes "k8s-workeer-1" not found
+[12:52:02] system@controlplane:~/kube/affinity$ k label nodes k8s-worker-1 disktype=ssd
+node/k8s-worker-1 labeled
+[12:53:37] system@controlplane:~/kube/affinity$ cat << EOF > database-pod.yaml
+> apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-db
+  labels:
+    app: database # <-- This label is crucial for the next step!
+spec:
+  containers:
+  - name: redis
+    image: redis:alpine
+  affinity:
+    nodeAffinity:
+      # HARD NODE AFFINITY: Must land on an SSD node
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: disktype
+            operator: In
+            values:
+            - ssd
+> EOF
+[12:55:07] system@controlplane:~/kube/affinity$ k apply -f database-pod.yaml
+pod/secure-db created
+[12:55:39] system@controlplane:~/kube/affinity$ kubectl get pods -o wide
+NAME        READY   STATUS              RESTARTS   AGE   IP       NODE           NOMINATED NODE   READINESS GATES
+secure-db   0/1     ContainerCreating   0          4s    <none>   k8s-worker-1   <none>           <none>
+[12:55:43] system@controlplane:~/kube/affinity$ cat << EOF >api-pod.yaml
+> apiVersion: v1
+kind: Pod
+metadata:
+  name: api-worker
+spec:
+  containers:
+  - name: web-api
+    image: nginx:alpine
+  affinity:
+    podAffinity:
+      # SOFT POD AFFINITY: Prefer to be close to the database
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - database # Looks for the label we gave the DB pod
+          topologyKey: kubernetes.io/hostname # Prefers the exact same machine
+> EOF
+[12:59:37] system@controlplane:~/kube/affinity$ ^C
+[12:59:37] system@controlplane:~/kube/affinity$ kubectl apply -f api-pod.yaml
+pod/api-worker created
+[13:00:09] system@controlplane:~/kube/affinity$ kubectl get pods -o wide
+NAME         READY   STATUS              RESTARTS   AGE     IP               NODE           NOMINATED NODE   READINESS GATES
+api-worker   1/1     Running             0          43s     192.168.230.16   k8s-worker-1   <none>           <none>
+secure-db    0/1     ContainerCreating   0          5m13s   <none>           k8s-worker-1   <none>           <none>
