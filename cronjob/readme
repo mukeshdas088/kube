@@ -1,0 +1,188 @@
+# 1. THE ALWAYS-RUNNING APP
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infytel-core-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: infytel-core
+  template:
+    metadata:
+      labels:
+        app: infytel-core
+    spec:
+      containers:
+      - name: app
+        image: infytel/customer-service:v1
+        command: ["npm", "start"] # Starts the web server
+---
+# 2. THE SCHEDULED TASK (Shares the same code/image but runs a different command)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: infytel-nightly-cleanup
+spec:
+  schedule: "0 6 15 * *" # Runs at 6 AM on the 15th
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: cleanup-task
+            image: infytel/customer-service:v1
+            command: ["npm", "run", "cleanup-db"] # Runs a specific script and exits
+          restartPolicy: OnFailure
+
+The Deployment Command
+To create a deployment named infytel-customerdeployment with 3 replicas using the busybox image:
+
+Bash
+kubectl create deployment infytel-customerdeployment \
+  --image=busybox \
+  --replicas=3 \
+  --dry-run=client -o yaml \
+  -- /bin/sh -c "while true; do echo 'Hello World'; sleep 10; done" > deployment.yaml
+
+
+ When troubleshooting Kubernetes CronJobs purely from the command line, you don't always have time to write or look at YAML files. Mastering **imperative commands** allows you to inspect, trigger, mimic, and debug CronJobs on the fly.
+
+Here is a deep-dive troubleshooting guide using nothing but `kubectl` imperative commands.
+
+---
+
+## 1. Fast-Track Diagnostics (The Checkup)
+
+Before diving deep, gather the status of your CronJob using these core imperative commands.
+
+### Check the Schedule and Active Status
+
+bash
+kubectl get cronjob infytel-customercronjob
+
+
+
+* **What to look for:** Look at the `ACTIVE` column. If it's `0`, no instances are currently running. Look at `LAST SCHEDULE`—if it says `<none>` or shows a time much older than expected, the controller isn't triggering it.
+
+### Inspect the Brains of the CronJob
+
+bash
+kubectl describe cronjob infytel-customercronjob
+
+
+
+* **What to look for:** Scroll straight to the bottom to the **Events** section. This is where Kubernetes will explicitly tell you if it failed to create a job due to resource quotas, invalid service accounts, or bad syntax.
+
+---
+
+## 2. Deep-Dive Troubleshooting Scenarios
+
+### Scenario A: "I don't want to wait until 6 AM to test this." (Manual Trigger)
+
+You can manually force Kubernetes to run a CronJob right now by creating a standard `Job` *from* the CronJob template.
+
+bash
+kubectl create job --from=cronjob/infytel-customercronjob manual-test-run
+
+
+
+* **Why this helps:** This bypasses the cron schedule entirely. If this command succeeds and the pod runs perfectly, your container code and permissions are fine—the issue is strictly your cron `--schedule` syntax.
+
+### Scenario B: "The job is stuck or running indefinitely."
+
+If a prior run of your job hung (e.g., waiting on a database lock), it might block future runs depending on your concurrency policy.
+
+1. **Find the spawned pods:**
+bash
+kubectl get pods -l job-name
+
+
+
+
+*(Or target the specific active job name found via `kubectl get jobs`)*
+2. **Stream live logs of the execution:**
+bash
+kubectl logs -f pod/manual-test-run-xxxx
+
+
+
+
+3. **Kill the stuck execution immediately:**
+If you need to abort a hung run, do not delete the CronJob. Delete the *Job* object it spawned:
+bash
+kubectl delete job manual-test-run
+
+
+
+
+
+### Scenario C: "The container crashes immediately, and logs are blank."
+
+If a container throws an error and exits instantly, standard `kubectl logs` might return nothing. You need to peek at the previous dead container.
+
+bash
+kubectl logs pod/<pod-name> --previous
+
+
+
+If that still fails, mimic the CronJob using an imperative, interactive debugging pod to test network connections or environment variables manually:
+
+bash
+kubectl run debug-pod -it --rm --image=busybox -- /bin/sh
+
+
+
+*Once inside, try to ping your databases or curl your internal microservices to test connectivity.*
+
+---
+
+## 3. On-The-Fly Fixes (Imperative Mutations)
+
+If you find an issue during troubleshooting, you can patch or pause the CronJob natively without touching a text editor.
+
+### Suspend/Pause a CronJob
+
+If your database is undergoing maintenance and you want to prevent a CronJob from firing and breaking, pause it:
+
+bash
+kubectl patch cronjob infytel-customercronjob -p '{"spec" : {"suspend" : true}}'
+
+
+
+To unpause it later, just flip it to false:
+
+bash
+kubectl patch cronjob infytel-customercronjob -p '{"spec" : {"suspend" : false}}'
+
+
+
+### Dynamically Update the Schedule
+
+Did you catch a typo in your cron expression? Fix the schedule instantly:
+
+bash
+kubectl set image cronjob/infytel-customercronjob busybox=busybox:1.36
+
+
+
+*(For schedules or internal settings, `patch` or `edit` is best):*
+
+bash
+kubectl patch cronjob infytel-customercronjob -p '{"spec":{"schedule": "0 12 * * *"}}'
+
+
+
+---
+
+## 4. Quick Reference: The Troubleshooting Cheat Sheet
+
+| Goal | Imperative Command |
+| --- | --- |
+| **List all cronjobs** | `kubectl get cj` |
+| **See underlying jobs** | `kubectl get jobs` |
+| **Check failure events** | `kubectl describe cj <cronjob-name>` |
+| **Force run immediately** | `kubectl create job --from=cronjob/<cj-name> <any-test-name>` |
+| **View logs of dead pod** | `kubectl logs <pod-name> --previous` |
+| **Pause executions** | `kubectl patch cj <cj-name> -p '{"spec":{"suspend":true}}'` |
+| **Delete all completed jobs** | `kubectl delete jobs --field-selector status.successful=1` |

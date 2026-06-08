@@ -1,0 +1,65 @@
+The Imperative Blueprint
+To replicate exactly what your YAML file just did using only kubectl one-liners, you use three main techniques:
+1. Recreate the Entire Manifest via One-Line Creation
+You can pass the image pull policy, correct shell execution parameters, and multi-line script logic straight through a single terminal execution block.
+Bash
+
+
+
+
+# Force remove the previous cronjob imperatively
+kubectl delete cj infytel-customerdeployment --ignore-not-found
+
+# Re-create it fully operational using imperative overrides
+kubectl create cronjob infytel-customerdeployment \
+  --image=nginx \
+  --schedule="*/1 * * * *" \
+  --dry-run=client -o yaml \
+  -- /bin/sh -c "echo 'This application is running on Kubernetes'; date" \
+  | sed '/image:/a \        imagePullPolicy: IfNotPresent' \
+  | kubectl apply -f -
+Why sed is used imperatively here: The native kubectl create cronjob subcommand does not feature a dedicated CLI flag to specify an explicit --image-pull-policy. Piping the output to sed injects imagePullPolicy: IfNotPresent directly into your container context on the fly before sending it to the Kubernetes API engine.
+Deep-Dive Imperative Troubleshooting (Step-by-Step)
+Now that it's running smoothly, here is how you track, examine, and test its life cycle purely using the CLI.
+Step A: Monitor the Heartbeat
+To check when it last successfully triggered and whether it's accumulating stale or completed pods without opening files:
+Bash
+
+
+
+
+kubectl get cj,jobs,pods
+Your successful run proved that LAST SCHEDULE will no longer read <none>. It will actively refresh with the exact elapsed time since the last minute rolled over.
+Step B: Force an Immediate Run (No Waiting)
+If you want to manually run the underlying script logic immediately to test an update without modifying your schedule, use the --from creation pattern:
+Bash
+
+
+
+
+kubectl create job --from=cronjob/infytel-customerdeployment manual-run-verify
+This imperatively instantiates a standalone Job object copying your exact parameters (nginx, IfNotPresent, your echo script) to confirm execution runs clean.
+Step C: Extracting Logs and Cleaning Up
+Once your pods report a Completed status, retrieve the stdout logs using labels rather than searching for individual dynamic pod hashes:
+Bash
+
+
+
+
+# View logs for all executions spawned by this specific CronJob resource
+kubectl logs -l batch.kubernetes.io/job-name
+
+# Imperatively clean up all successfully processed jobs left behind on your nodes
+kubectl delete jobs --field-selector status.successful=1
+Step D: Freezing the Automation Imperatively
+If you need to stop the cron engine from firing every single minute while you update something else in your cluster, you can toggle its execution flag live:
+Bash
+
+
+
+
+# Pause the cron execution engine completely
+kubectl patch cj infytel-customerdeployment -p '{"spec":{"suspend":true}}'
+
+# Resume standard operations 
+kubectl patch cj infytel-customerdeployment -p '{"spec":{"suspend":false}}'

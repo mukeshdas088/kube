@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  creationTimestamp: null
+  name: infytel-customerdeployment
+spec:
+  jobTemplate:
+    metadata:
+      creationTimestamp: null
+      name: infytel-customerdeployment
+    spec:
+      template:
+        metadata:
+          creationTimestamp: null
+        spec:
+          containers:
+          - image: nginx
+            name: infytel-customerdeployment
+            resources: {}
+            imagePullPolicy: IfNotPresent  # Crucial for bypassing network timeouts
+            command : ["/bin/sh","-c"]
+            args :
+              - |
+                echo "This application is running on Kubernetes"
+                date
+          restartPolicy: OnFailure
+  schedule: '*/1 * * * *'
+status: {}
