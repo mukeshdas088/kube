@@ -26,7 +26,7 @@ metadata:
     tier: frontend
 spec:
   containers:
-   Tir- name: web-app
+  - name: web-app
     image: nginx:alpine
     ports:
     - containerPort: 80
