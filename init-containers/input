@@ -1,0 +1,24 @@
+Exercises on Multi-container Pod Design Patterns in Kubernetes
+
+Configure the customer micro-service of InfyTel application as a multi-container pod which exhibits the following specifications.
+
+Verify the existence of eureka-cp-svc making use of a container
+
+This container must exist after checking the service
+
+Only if the service is reachable, then proceed to create the actual micro-service container
+
+
+=========
+
+Implement health probe for the InfyTel application as per the below specification.
+
+Type of Probe : Readiness
+
+Type of Check: TCP connection check
+
+Port : 8400
+
+initialDelay: 5 sec
+
+Period after which the pod has to be probed again :  10 sec

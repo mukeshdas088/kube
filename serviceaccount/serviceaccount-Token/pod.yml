@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: infytel-customer-service
+spec:
+  serviceAccountName: infytel-sa  # Associates the pod with your SA
+  containers:
+    - name: infytel-app-container
+      image: nginx:alpine

@@ -1,0 +1,83 @@
+
+
+The Order of Events
+	1	The Pod Starts (PodInitializing): When you ran k apply -f pod-tem.yml, Kubernetes started the init-contcontainer first. The main Nginx container (main-cont) was blocked from starting until this init container exited successfully (exit code 0).
+	2	The until Loop Checks DNS: Inside the init container, the script ran nslookup on your dynamic FQDN address. Because you had already created the service (kubectl create service clusterip my-svc...), CoreDNS instantly resolved my-svc.default.svc.cluster.local to the ClusterIP 10.111.14.207.
+	3	Success & Handoff (Running): Since nslookup succeeded on the very first try, the until loop broke immediately, printed "container ran successfully", and exited. Kubernetes saw the init container finish cleanly and immediately spun up your main Nginx container, changing the status from PodInitializing to Running in just 3 seconds.
+What would happen if the service didn't exist?
+If you hadn't created the service beforehand, your terminal logs would have looked like this:
+	1	nslookup would fail (exit code non-zero).
+	2	The loop would print: trying to access my-svc but not reachable and so it is pending please create service 
+	3	It would sleep for 2 seconds and try again, keeping the Pod stuck in PodInitializing indefinitely until someone ran the kubectl create service command in another terminal.
+One Small Warning for Production
+While this is a fantastic pattern for ensuring deployment order, busybox's implementation of nslookup can sometimes behave unpredictably with certain DNS search paths if the service drops packets during a rollout.
+For a production-grade version of this loop, using nc (netcat) or curl to check for actual port readiness alongside DNS resolution is often more robust:
+Bash
+
+until nc -z -w 2 my-svc.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local 80; do
+  echo "Waiting for service port 80..."
+  sleep 2
+done
+
+
+===========
+
+
+Here is the complete solution and explanation for setting up your multi-container Pod based on the Init Container (Service Dependency) and Readiness Probe design patterns.
+Understanding the Architecture
+Before looking at the YAML, let's address your note: referring to qsn Port : 8400 but sec created on 80.
+	•	The Init Container checks if the Service (eureka-cp-svc) exists via CoreDNS.
+	•	The Readiness Probe checks the Application Container directly on port 8400 where the actual InfyTel microservice process is listening inside the container.
+	•	Even if an external Kubernetes Service maps to port 80, the probe interacts directly with the container's network namespace on port 8400.
+The Complete Pod Manifest (infytel-pod.yaml)
+YAML
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: infytel-customer-service
+  labels:
+    app: infytel-customer
+spec:
+  # 1. Init Container to verify eureka-cp-svc existence
+  initContainers:
+    - name: verify-eureka-service
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Checking for existence of eureka-cp-svc..."
+          NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+          SVC_URL="eureka-cp-svc.${NAMESPACE}.svc.cluster.local"
+          
+          until nslookup $SVC_URL; do
+            echo "eureka-cp-svc is not reachable yet. Retrying in 2 seconds..."
+            sleep 2
+          done
+          
+          echo "eureka-cp-svc is reachable! Init container exiting successfully."
+
+  # 2. Main Application Container
+  containers:
+    - name: infytel-app-container
+      image: nginx:alpine # Replace with your actual InfyTel customer micro-service image
+      ports:
+        - containerPort: 8400
+          name: app-port
+      
+      # 3. Health Probe Implementation
+      readinessProbe:
+        tcpSocket:
+          port: 8400
+        initialDelaySeconds: 5
+        periodSeconds: 10
+Specification Breakdown
+1. Init Container (Service Verification)
+	•	Design Pattern: Init Container.
+	•	Mechanism: It dynamically determines its namespace from /var/run/secrets/..., structures the FQDN for eureka-cp-svc, and loops nslookup every 2 seconds.
+	•	Requirement Fulfilled: "Only if the service is reachable, then proceed to create the actual micro-service container". Since an init container must exit with code 0 before main containers start, the main app is blocked until the DNS record exists.
+2. Readiness Probe Config
+	•	tcpSocket.port: 8400: Performs a three-way TCP handshake on port 8400. If the port accepts the connection, the check passes.
+	•	initialDelaySeconds: 5: Kubernetes waits exactly 5 seconds after the container starts before firing the first probe, giving your application binary a moment to boot up.
+	•	periodSeconds: 10: Instructs the kubelet to repeat this check every 10 seconds to ensure the microservice stays healthy.
+

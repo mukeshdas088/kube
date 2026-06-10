@@ -1,0 +1,103 @@
+Here are the step-by-step solutions to complete both exercises for the InfyTel application.
+Exercise 1: Service Account & Manual Token Association
+Since Kubernetes 1.24+, token secrets are no longer automatically generated for ServiceAccounts. To fulfill the requirement of associating a manual token via a secret, we use the kubernetes.io/service-account.nameannotation.
+Step 1: Create the Service Account
+Create the service account named InfyTel_SA:
+Bash
+
+kubectl create serviceaccount infytel-sa
+(Note: Kubernetes resource names are typically lowercase; we will use infytel-sa and infytel-secret for resource definitions to comply with DNS-1123 standards).
+Step 2: Create the Secret and Manually Generate the Token
+Create a file named infytel-secret.yaml with the special token type and link it to your service account:
+YAML
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: infytel-secret
+  annotations:
+    kubernetes.io/service-account.name: "infytel-sa"
+type: kubernetes.io/service-account-token
+Apply the secret:
+Bash
+
+kubectl apply -f infytel-secret.yaml
+Kubernetes will detect this annotation and automatically populate a long-lived API token into the secret. You can verify the token generation by running:
+Bash
+
+kubectl describe secret infytel-secret
+Step 3: Apply the Service Account to the Pods
+In your InfyTel application deployment or pod definition, add the serviceAccountName field under the specblock:
+YAML
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: infytel-customer-service
+spec:
+  serviceAccountName: infytel-sa  # Associates the pod with your SA
+  containers:
+    - name: infytel-app-container
+      image: nginx:alpine
+Step 4: Verification
+Verify that the pod is actively utilizing the new service account identity:
+Bash
+
+kubectl get pod infytel-customer-service -o jsonpath='{.spec.serviceAccountName}'
+Expected Output: infytel-sa
+Exercise 2: Fine-grained Access Control (RBAC)
+Kubernetes does not have a native User API object. User authentication (like joey) is usually managed via external certificates or identity providers. However, authorization is handled in-cluster via Role-Based Access Control (RBAC).
+Step 1: Create the Reader Role
+Create a file named infytel-reader-role.yaml to configure the specified constrained permissions:
+YAML
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: InfyTel_reader
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources: ["pods"]
+  verbs: ["get", "list"]
+Apply the role:
+Bash
+
+kubectl apply -f infytel-reader-role.yaml
+Step 2: Bind the Role to User "joey"
+Create a file named infytel-rolebinding.yaml to map the newly created permissions specifically to Joey:
+YAML
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: infytel-reader-binding
+subjects:
+- kind: User
+  name: joey
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: InfyTel_reader
+  apiGroup: rbac.authorization.k8s.io
+Apply the binding:
+Bash
+
+kubectl apply -f infytel-rolebinding.yaml
+Step 3: Test Joey's Authorization
+You do not need to log in as Joey to test this. You can leverage the kubectl auth can-i impersonation command to test access on his behalf:
+	1	Test if joey can list pods (Should be YES): Bash  kubectl auth can-i list pods --as=joey Output: yes
+	3	Test if joey can delete pods (Should be NO): Bash  kubectl auth can-i delete pods --as=joey  Output: no
+	5	Test if joey can look at other resources like services (Should be NO): Bash  kubectl auth can-i list services --as=joey  Output: no
+
+============================
+
+
+[14:33:48] system@controlplane:~/kube/serviceaccount/roles-rolebindings$ kubectl create role InfyTel_reader --resource="pod,deployment" --verb="get"
+role.rbac.authorization.k8s.io/InfyTel_reader created
+[14:34:35] system@controlplane:~/kube/serviceaccount/roles-rolebindings$ kubectl create rolebinding infytel-reader-binding --role=InfyTel_reader \
+> --user=joey
+rolebinding.rbac.authorization.k8s.io/infytel-reader-binding created
+[14:35:41] system@controlplane:~/kube/serviceaccount/roles-rolebindings$ kubectl auth can-i list pods --as=joey
+no
+[14:35:59] system@controlplane:~/kube/serviceaccount/roles-rolebindings$ kubectl auth can-i get pods --as=joey
+yes

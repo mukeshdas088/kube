@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+  labels:
+    app: blue
+spec:
+  initContainers:
+    - name: init-cont
+      image: busybox
+      command: ["sh","-c"]
+      args:
+        - |
+          echo "checking associated svc"
+          until nslookup my-svc.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local
+          do
+            echo "trying to access my-svc but not reachable and so it is pending"
+            echo "please create service";sleep 2
+          done
+          echo "container ran successfully"
+  containers:
+    - name: main-cont
+      image: nginx
+      command: ["/bin/sh","-c"]
+      args:
+        - |
+          echo "container is running on $date";sleep 3600
+      ports:
+        - name: cont-port
+          containerPort: 8400
+
+      readinessProbe:
+        tcpSocket:
+          port: 8400
+        initialDelaySeconds: 5
+        periodSeconds: 5
+

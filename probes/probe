@@ -1,0 +1,167 @@
+Here is a complete guide and a ready-to-use GitHub-flavored Markdown text that covers Kubernetes Liveness, Readiness, and Startup probes using httpGet, exec, and tcpSocket.
+To make this practical, the examples are structured around a classic Three-Tier Architecture:
+	1	Frontend Tier (Using httpGet)
+	2	Backend API Tier (Using exec`)
+	3	Database Tier (Using tcpSocket)
+At the bottom, you'll find the exact imperative commands to generate and run these quickly without writing YAML from scratch.
+Kubernetes Probes in a Three-Tier Architecture
+This guide demonstrates how to implement the three types of probes (Startup, Readiness, and Liveness) across three different tiers using three different mechanisms (httpGet, exec, and tcpSocket).
+[ Frontend Tier ]  --> Uses httpGet (Checks web UI paths)
+       |
+[ Backend API Tier ] --> Uses exec (Runs custom health-check scripts)
+       |
+[ Database Tier ]    --> Uses tcpSocket (Checks if DB port is open)
+1. Frontend Tier (Using httpGet)
+The frontend tier typically serves web content. We use httpGet to ensure the web server is responding to HTTP requests.
+	•	Startup Probe: Gives the web server 30 seconds to start up.
+	•	Readiness Probe: Checks if the /ready static page is accessible before routing user traffic.
+	•	Liveness Probe: Periodically hits /healthz to ensure the server hasn't crashed.
+YAML
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frontend-tier
+  labels:
+    tier: frontend
+spec:
+  containers:
+   Tir- name: web-app
+    image: nginx:alpine
+    ports:
+    - containerPort: 80
+    
+    # 1. Startup Probe
+    startupProbe:
+      httpGet:
+        path: /index.html
+        port: 80
+      failureThreshold: 6
+      periodSeconds: 5 # Gives it up to 30s to start
+      
+    # 2. Readiness Probe
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 80
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      
+    # 3. Liveness Probe
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 80
+      initialDelaySeconds: 10
+      periodSeconds: 10
+2. Backend API Tier (Using exec)
+The backend app might need to run an internal script, check a local file, or run a CLI tool to verify its internal state. We use exec commands here.
+	•	Startup Probe: Checks if a boot lockfile has been cleared.
+	•	Readiness Probe: Executes a custom python/bash script to check database connectivity.
+	•	Liveness Probe: Checks if the application process PID is still active.
+YAML
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-tier
+  labels:
+    tier: backend
+spec:
+  containers:
+  - name: api-app
+    image: python:3.9-slim
+    command: ["/bin/sh", "-c", "touch /tmp/started; sleep 9999"]
+    
+    # 1. Startup Probe
+    startupProbe:
+      exec:
+        command:
+        - cat
+        - /tmp/started
+      failureThreshold: 3
+      periodSeconds: 5
+      
+    # 2. Readiness Probe
+    readinessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -c
+        - "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/ready-check\")'"
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      
+    # 3. Liveness Probe
+    livenessProbe:
+      exec:
+        command:
+        - kill
+        - -0
+        - "1" # Checks if PID 1 is alive
+      initialDelaySeconds: 15
+      periodSeconds: 20
+3. Database Tier (Using tcpSocket)
+For databases or message queues (like MySQL, PostgreSQL, or Redis), checking if the TCP port is open and accepting connections is often the fastest and most reliable baseline check.
+	•	Startup Probe: Waits for the heavy DB engine to open its networking port.
+	•	Readiness Probe: Ensures the port is open to accept connection pools from the backend.
+	•	Liveness Probe: Continuously monitors if the port goes down (indicating a crash).
+YAML
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: database-tier
+  labels:
+    tier: database
+spec:
+  containers:
+  - name: db-mysql
+    image: mysql:8.0
+    env:
+    - name: MYSQL_ROOT_PASSWORD
+      value: "secretpass"
+    ports:
+    - containerPort: 3306
+    
+    # 1. Startup Probe
+    startupProbe:
+      tcpSocket:
+        port: 3306
+      failureThreshold: 10
+      periodSeconds: 5 # Gives the DB 50 seconds to initialize schemas
+      
+    # 2. Readiness Probe
+    readinessProbe:
+      tcpSocket:
+        port: 3306
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      
+    # 3. Liveness Probe
+    livenessProbe:
+      tcpSocket:
+        port: 3306
+      initialDelaySeconds: 15
+      periodSeconds: 10
+The Imperative Way (Fast Commands)
+While you cannot generate all three complex probes simultaneously inside a single kubectl run command string, the fastest imperative way to create these templates without manual writing is to generate the base YAML via --dry-run=client and redirect it to a file.
+Here are the exact commands to generate these instantly:
+1. Generate Frontend (HTTP) Base:
+Bash
+
+kubectl run frontend-tier --image=nginx:alpine --port=80 --dry-run=client -o yaml > frontend.yaml
+(Open frontend.yaml and paste the livenessProbe/readinessProbe blocks under the container specs).
+2. Generate Backend (Exec) Base:
+Bash
+
+kubectl run backend-tier --image=python:3.9-slim --dry-run=client -o yaml > backend.yaml
+3. Generate Database (TCP) Base & Run Immediately:
+If you just want to run a quick test pod imperatively with a basic basic probe mechanism directly from the CLI, use:
+Bash
+
+# Imperative creation of a pod with a basic Liveness HTTP check
+kubectl run test-http-pod --image=nginx --port=80 --liveness-handler='{"httpGet": {"path": "/", "port": 80}}'
+
+# Imperative creation of a pod with a basic Liveness Exec check
+kubectl run test-exec-pod --image=busybox --command -- sh -c "sleep 3600" --liveness-handler='{"exec": {"command": ["cat", "/tmp/healthy"]}}'
