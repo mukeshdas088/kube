@@ -1,0 +1,148 @@
+
+ cat ~/.bashrc
+# ====================================================================
+# MASTER KUBERNETES CONTROL-PLANE & ENVIRONMENT CONFIGURATION
+# ====================================================================
+
+# 0. System Variables & Cleanup Guards
+# Forcefully purge any legacy unprivileged config path variables to prevent lockouts
+unset KUBECONFIG
+
+# Dynamic Clean Prompt: control-plane + Kolkata Time (IST)
+export PS1="\[\e[32m\]control-plane\[\e[m\] \[\e[33m\][\$(TZ='Asia/Kolkata' date +'%I:%M:%S %p') IST]\[\e[m\] \[\e[36m\]\w\[\e[m\]\$ "
+# --------------------------------------------------------------------
+# 1. Kubernetes Shell Auto-Completion & Core Tools
+# --------------------------------------------------------------------
+source <(kubectl completion bash 2>/dev/null)
+complete -o default -F __start_kubectl k 2>/dev/null
+
+# --------------------------------------------------------------------
+# 2. Container Runtime Defaults (crictl System Config)
+# --------------------------------------------------------------------
+# Route system utilities permanently to the active containerd socket
+export CONTAINER_RUNTIME_ENDPOINT="unix:///var/run/containerd/containerd.sock"
+export IMAGE_SERVICE_ENDPOINT="unix:///var/run/containerd/containerd.sock"
+
+# --------------------------------------------------------------------
+# 3. Production Aliases & Shortcuts
+# --------------------------------------------------------------------
+# Securely maps your standard user to the admin configuration via sudo
+alias k="sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf"
+alias crictl="sudo crictl"
+alias c-images="sudo crictl images"
+alias check-swap="free -m"
+alias clr="clear"
+alias cls="clear"
+
+
+# --------------------------------------------------------------------
+# 4. Terminal Directory & File Custom Colors (Dynamic Shuffling Engine)
+# --------------------------------------------------------------------
+# Clean up old default system aliases to prevent execution lockouts
+
+unalias ls ll la 2>/dev/null
+
+# Shuffling engine: Generates a completely new random color on every command execution
+_shuffle_colors() {
+    # Valid ANSI color matrix: 31=Red, 32=Green, 33=Yellow, 34=Blue, 35=Magenta, 36=Cyan
+    local colors=(31 32 33 34 35 36)
+    local random_index=$(( RANDOM % ${#colors[@]} ))
+    local chosen_color=${colors[$random_index]}
+
+    # Absolute override string injected directly into the active session environment
+    export LS_COLORS="di=01;${chosen_color}:ex=01;32:ln=01;36:*.txt=01;37:*.md=01;35"
+}
+
+# Core Session Hooks: Forcefully executes the color engine every time you call an ls option
+ls() {
+    _shuffle_colors
+    command ls --color=always -h "$@"
+}
+
+ll() {
+    _shuffle_colors
+    command ls --color=always -l "$@"
+}
+
+la() {
+    _shuffle_colors
+    command ls --color=always -A "$@"
+}
+
+
+# --------------------------------------------------------------------
+# 5. Offline Deployment Utility Function
+# --------------------------------------------------------------------
+# Drops a container utilizing local cached images only, bypassing internet drops
+# Usage: k-run-offline <pod-name> <image-name:tag>
+k-run-offline() {
+    if [ -z "$1" ] || [ -z "$2" ]; then
+        echo "❌ Error: Missing arguments!"
+        echo "Usage:   k-run-offline <pod-name> <image-name:tag>"
+        echo "Example: k-run-offline offline-box busybox:1.36.1"
+                return 1
+    fi
+    sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf run "$1" --image="$2" --overrides='{"spec":{"containers":[{"name":"'"$1"'","image":"'"$2"'","command":["sh","-c","while true; do sleep 3600; done"],"imagePullPolicy":"IfNotPresent"}]}}'
+}
+
+# --------------------------------------------------------------------
+# 6. Kubernetes Cluster Complete Cleanup Suite (Nuclear Reset)
+# --------------------------------------------------------------------
+alias k-clean-ingress="sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf delete ingress --all --all-namespaces"
+alias k-clean-storage="echo '🧹 Clearing PVCs then PVs...'; sudo kub ectl --kubeconfig=/etc/kubernetes/admin.conf delete pvc --all --all-namespaces && sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf delete pv --all"
+
+k-nuclear-reset() {
+    read -p "⚠️  CRITICAL: Are you absolutely sure you want to completely wipe non-system resources from this cluster? (y/N): " confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo "🔒 Enforcing default cluster admin context with root privileges..."
+        local k_cmd="sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf"
+
+        echo "💣 Initializing complete environment teardown..."
+
+        echo "-> Dropping Ingress networks..."
+        $k_cmd delete ingress --all --all-namespaces --timeout=30s --ignore-not-found
+
+        echo "-> Purging workloads in standard default namespace..."
+        $k_cmd delete daemonsets,statefulsets,deployments,services,pods,ingress,pvc,configmaps,secrets,serviceaccounts --all -n default --timeout=45s --ignore-not-found
+
+        echo "-> Purging custom user namespaces (preserving vital system & network spaces)..."
+        for ns in $($k_cmd get namespaces -o jsonpath='{.items[*].metadata.name}'); do
+            if [[ "$ns" != "kube-system" && "$ns" != "kube-public" && "$ns" != "kube-node-lease" && "$ns" != "default" && "$ns" != "calico-system" && "$ns" != "tigera-operator" && "$ns" != "calico-apiserver" ]]; then
+                echo "   Cleaning namespace: $ns"
+                $k_cmd delete all,secrets,configmaps,serviceaccounts,ingress,pvc --all -n "$ns" --timeout=30s --ignore-not-found
+                $k_cmd delete namespace "$ns" --timeout=30s --ignore-not-found
+            fi
+        done
+
+        echo "-> Purging Kubernetes Dashboard namespace..."
+        $k_cmd delete namespace kubernetes-dashboard --ignore-not-found --timeout=30s
+
+        echo "-> Safely tearing down storage infrastructure (PVCs -> PVs)..."
+        $k_cmd delete pvc --all --all-namespaces --timeout=30s --ignore-not-found
+        $k_cmd delete pv --all --timeout=30s --ignore-not-found
+
+        echo "✨ Cluster cleanup sequence finished successfully!"
+    else
+        echo "❌ Reset canceled."
+    fi
+}
+
+# --------------------------------------------------------------------
+# 7. Automated Infrastructure System Guards (Runs on Shell Login)
+# --------------------------------------------------------------------
+# Swap-Off Protection: Kubelet will crash instantly if swap reactivates
+if [ "$(swapon --show | wc -l)" -gt 0 ]; then
+    echo "⚠️  CRITICAL: Swap is active! Disabling it..."
+    sudo swapoff -a
+fi
+
+# DNS Fallback Protection: Insures your node can resolve public image domains
+if ! grep -q "nameserver 8.8.8.8" /etc/resolv.conf; then
+    echo "🔧 DNS: Injecting backup public nameserver 8.8.8.8..."
+    echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
+fi
+
+echo "🚀 Environment optimized: Core Aliases ready, Colors loaded, Swap dead, DNS protected."
+
+
+
