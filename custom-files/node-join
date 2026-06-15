@@ -1,0 +1,6 @@
+# Execute on Master to fix API crashes, restore missing configs, and print a fresh join link:
+kubectl delete apiservice v1beta1.metrics.k8s.io v3.projectcalico.org --ignore-not-found && \
+kubectl create clusterrolebinding kubeadm:bootstrap-signer-clusterinfo --clusterrole=system:bootstrap-signer-clusterinfo --group=system:unauthenticated --dry-run=client -o yaml | kubectl apply -f - && \
+sudo kubeadm init phase bootstrap-token && \
+sudo kubeadm init phase upload-config all && \
+kubeadm token create --print-join-command

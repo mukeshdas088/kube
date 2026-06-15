@@ -1,0 +1,125 @@
+cat my-dep.yaml 
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv
+  labels:
+    app: red
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /root/home/system/kube/storage/dir
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  selector:
+    matchLabels:
+      app: red
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-dep
+  labels:
+    app: red
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: red
+  template:
+    metadata:
+      labels:
+        app: red
+    spec:
+      volumes:
+        - name: my-vol
+          persistentVolumeClaim:
+            claimName: my-pvc
+      tolerations:
+        - key: env
+          operator: Equal
+          value: prod
+          effect: NoSchedule
+      nodeSelector:
+        kubernetes.io/hostname: k8s-master
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                - key: type
+                  operator: In
+                  values:
+                    - gpu
+      initContainers:
+        - name: busybox
+          image: busybox
+          command: ["sh","-c"]
+          args:
+            - |
+              echo "Testing service for container initialization...."
+              until nslookup my-svc.$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace).svc.cluster.local;do
+                echo "my-svc not found"
+                sleep 2
+              done
+      containers:
+        - name: nginx
+          image: nginx
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              ls -l /mnt
+              sh /mnt/file.sh
+              sleep 100
+          volumeMounts:
+            - name: my-vol
+              mountPath: /mnt
+
+
+
+control-plane [10:43:16 PM IST] ~$ kubectl apply -f my-dep.yaml 
+persistentvolume/my-pv created
+persistentvolumeclaim/my-pvc created
+deployment.apps/my-dep created
+control-plane [10:43:26 PM IST] ~$ k logs my-dep-74f7cbfcbb-wvls7
+Defaulted container "nginx" out of: nginx, busybox (init)
+total 4
+-rw-rw-r-- 1 1000 1000 39 Jun 15 15:53 file.sh
+Today is -------
+Mon Jun 15 17:13:43 UTC 2026
+
+
+control-plane [10:48:15 PM IST] ~/dir$ k describe node k8s-master | grep -i "labels" -A 7
+Labels:             beta.kubernetes.io/arch=amd64
+                    beta.kubernetes.io/os=linux
+                    kubernetes.io/arch=amd64
+                    kubernetes.io/hostname=k8s-master
+                    kubernetes.io/os=linux
+                    node-role.kubernetes.io/control-plane=
+                    node.kubernetes.io/exclude-from-external-load-balancers=
+                    type=gpu
+
+control-plane [10:47:41 PM IST] ~/dir$ k describe node k8s-master | grep -i "taint" -A 6
+Taints:             env=prod:NoSchedule
+Unschedulable:      false
+Lease:
+  HolderIdentity:  k8s-master
+  AcquireTime:     <unset>
+  RenewTime:       Mon, 15 Jun 2026 22:47:57 +0530
+Conditions:
