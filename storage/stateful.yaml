@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv
+  labels:
+    app: blue
+spec:
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  capacity:
+    storage: 1Gi
+  nfs:
+    server: 192.168.31.158
+    path: /nfsshare01
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  selector:
+    matchLabels:
+      app: blue
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-svc-headless
+spec:
+  clusterIP: None
+  ports:
+    - protocol: TCP
+      port: 80
+  selector:
+    app: blue
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: my-sts
+  labels:
+    app: blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: blue
+  serviceName: my-svc-headless
+  template:
+    metadata:
+      labels:
+        app: blue
+    spec:
+      volumes:
+        - name: nfs-share
+          persistentVolumeClaim:
+            claimName: my-pvc
+      containers:
+        - name: busybox
+          image: busybox
+          command: ["sh","-c"]
+          args:
+            - |
+              echo "checking files..";ls /mnt
+              sleep 3600
+          volumeMounts:
+            - name: nfs-share
+              mountPath: /mnt
+

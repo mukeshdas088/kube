@@ -1,0 +1,49 @@
+================================ Resouce Quota =====================================
+
+* Always applied to -> namespace
+
+control-plane [12:20:31 PM IST] ~/kube/quota-pdb$ kubectl create ns my-ns
+namespace/my-ns created
+
+control-plane [12:23:30 PM IST] ~/kube/quota-pdb$ kubectl create quota my-quota \
+> --hard=pods=1 \
+> -n my-ns
+resourcequota/my-quota created
+
+control-plane [12:24:49 PM IST] ~/kube/quota-pdb$ kubectl run nginx --image=nginx -n my-ns
+pod/nginx created
+
+control-plane [12:24:56 PM IST] ~/kube/quota-pdb$ kubectl run nginx2 --image=nginx -n my-ns
+Error from server (Forbidden): pods "nginx2" is forbidden: exceeded quota: my-quota, requested: pods=1, used: pods=1, limited: pods=1
+
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+   name: my-quota
+   namespace: my-ns
+spec:
+   hard:
+     requests.cpu: "1"
+     requests.memory: 2Gi
+     limits.cpu: "2"
+     limits.memory: 3Gi
+     pods: "10"
+     services: "5"
+     configmaps: "2"
+
+
+ ====================== Pod Disruption Budget ============================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: my-pdb
+spec:
+  minAvailable: 2
+  selector: 
+    matchLabels:
+	app: nginx-demo
+
+
+kubectl create poddisruptionbudget my-pdb --selector=nginx-demo --min-available=2
