@@ -226,3 +226,56 @@ NAME             CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   
 demo-retain-pv   1Gi        RWO            Retain           Available                          <unset>                          11m
 
 ====================================================================================================================================
+
+Option 1: The Interactive Way (kubectl edit)
+This is the quickest way to do it manually. It opens the live configuration of the PV in a text editor (like vim or nano).
+
+Run this command:
+
+kubectl edit pv demo-retain-pv
+
+Scroll down to the spec: section, find the claimRef: block, and delete it completely.
+
+Before your edit, it looks like this:
+
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 1Gi
+  claimRef:                  # ❌ DELETE THIS ENTIRE BLOCK
+    apiVersion: v1           # ❌ DELETE
+    kind: PersistentVolumeClaim # ❌ DELETE
+    name: developer-pvc      # ❌ DELETE
+    namespace: default       # ❌ DELETE
+    resourceVersion: "13466" # ❌ DELETE
+    uid: 0a55bcc9-d91a-433b-... # ❌ DELETE
+  hostPath:
+    path: /mnt/data/demo
+
+Save and close the file (in Vim, press Esc, then type :wq and press Enter). Kubernetes will instantly apply the change and free up the PV.
+
+Option 2: The Declarative Way (kubectl apply)
+If you want to keep everything in a file, you can modify your original demo-retain-pv file to explicitly tell Kubernetes to clear out that field.
+
+To clear an existing object field using kubectl apply, you set that field to null.
+
+Update your demo-retain-pv file to include the claimRef set to null:
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: demo-retain-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /mnt/data/demo
+  claimRef: null # <-- 💡 This explicitly wipes out the old claim metadata
+
+Apply the file:
+kubectl apply -f demo-retain-pv
