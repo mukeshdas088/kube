@@ -1,0 +1,78 @@
+When you set readOnlyRootFilesystem: true inside a Pod's securityContext, the kernel blocks the container's application process from writing to its own filesystem.
+
+However, volume mounts (like ConfigMaps) are managed directly by the Kubelet on the host node, outside the container's isolation boundaries. 
+The Kubelet mounts the ConfigMap into the container as a separate, specialized projection. Because the Kubelet has root host privileges, 
+it bypasses the container's internal security context entirely to update the symlinks and files when the ConfigMap changes.
+
+The Demo
+Here is a hands-on demo you can run to watch this behavior in action. We will spin up a Pod with a strictly locked-down, read-only root filesystem, mount a ConfigMap, change the ConfigMap data, and verify that the updates roll through anyway.
+
+1. Create the Initial ConfigMap
+Save this as config.yaml and apply it:
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-config
+data:
+  max_connections: "100"
+
+kubectl apply -f config.yaml
+
+2. Deploy the Locked-Down Pod
+This Pod uses readOnlyRootFilesystem: true. To ensure it runs safely with a locked root, we also mount a temporary writeable memory space (emptyDir) to /tmp so the shell can initialize, but /etc/config remains under the ConfigMap's domain.
+
+Save this as pod.yaml and apply it:
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: security-db-pod
+spec:
+  containers:
+  - name: database
+    image: alpine
+    command: ["sleep", "3600"]
+    securityContext:
+      readOnlyRootFilesystem: true # 🔒 Root filesystem is completely locked
+    volumeMounts:
+    - name: config-volume
+      mountPath: /etc/config
+    - name: tmp-volume
+      mountPath: /tmp
+  volumes:
+  - name: config-volume
+    configMap:
+      name: db-config
+  - name: tmp-volume
+    emptyDir: {}
+
+kubectl apply -f pod.yaml
+
+The Verification Test
+Step A: Verify the initial state and file system locks
+First, let's look at the current value inside the container:
+
+kubectl exec security-db-pod -- cat /etc/config/max_connections
+
+Output: 100
+
+Next, let's prove the container process truly cannot write to its own filesystem:
+
+kubectl exec security-db-pod -- touch /etc/test.txt
+
+Output: touch: /etc/test.txt: Read-only file system
+
+Step B: Update the live ConfigMap
+Now, let's simulate the team updating the connection parameter in the live API server:
+
+kubectl patch configmap db-config -p '{"data":{"max_connections":"500"}}'
+
+Step C: Watch the Kubelet update the file
+Note: Kubelet syncs ConfigMap volume changes periodically (usually every 10 to 60 seconds depending on cache configurations). Wait about a minute and check the file inside the container again:
+
+kubectl exec security-db-pod -- cat /etc/config/max_connections
+
+500
+
+
