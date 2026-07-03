@@ -1,0 +1,51 @@
+
+# 🚀 Kubernetes & GitOps Engineering Session Notes
+
+A consolidated reference tracking 
+Helm management, API structures, cluster telemetry, and stateful application behavior.
+
+---
+
+## 🛠️ Summary of Covered Topics
+
+### 1. Helm Artifact Management (OCI Registry Paradigm)
+
+* **Syntax Rule:** Helm v3 dropped the explicit `chart` keyword to unify naming conventions with standard container workflows.
+* **The Correct Commands:**
+* **Pushing:** `helm push <package.tgz> oci://<registry-uri>` manages artifact distribution.
+* **Pulling:** `helm pull oci://<registry-uri>/<chart> --version <x.y.z> --untar` downloads and unpacks remote dependencies locally for layout inspection.
+
+
+
+### 2. Expression Logic & Scheduling Operations
+
+* **Affinity Engines:** Support rich conditional operators including `In`, `NotIn`, `Exists`, `DoesNotExist`, and mathematical range evaluation via `Gt` (Greater Than) and `Lt` (Less Than).
+* **Taints & Tolerations:** Use a simple, binary key/value matching system strictly limited to `Equal` and `Exists` operators.
+
+### 3. Cluster Telemetry Architecture
+
+* **cAdvisor:** An embedded metrics agent built directly into the `kubelet` binary on every node to pull local Linux `cgroup` container analytics.
+* **kube-metrics-server:** A central, in-memory cluster aggregator that scrapes data from individual kubelets to feed scheduling automation like Horizontal Pod Autoscalers (HPA) and provide immediate outputs for `kubectl top`.
+* **State Control Loop:** The `kube-controller-manager` is the dedicated component watching actual vs. desired states for high-level abstractions like **Deployments** and **DaemonSets**.
+
+### 4. GitOps Sync & Strict Resource Gates
+
+* **Admission Control:** `ResourceQuota` limits act as zero-queue admission blockades.
+* **Sync Failures:** If a declarative Argo CD sync triggers an execution payload that exceeds a namespace limit (e.g., trying to apply 18 `ConfigMaps` on a hard limit of 13), Kubernetes will immediately throw a `403 Forbidden` error on the overflow resources. Argo CD catches this error, stops the deployment transaction, and marks the app as `SyncFailed`.
+
+### 5. StatefulSet Identity & Storage Binding
+
+* **Deterministic Naming:** Stateful workloads follow a deterministic storage assignment algorithm matching `{VolumeClaimTemplate}-{StatefulSet-Name}-{Ordinal-Index}`.
+* **State Verification:** A 3-replica StatefulSet named `cache` using a template named `data` yields predictable resources that remain decoupled from raw pod lifecycles:
+
+$ kubectl get pvc
+NAME           STATUS   VOLUME
+data-cache-0   Bound    pvc-alpha...
+data-cache-1   Bound    pvc-beta...
+data-cache-2   Bound    pvc-gamma...
+
+
+---
+
+> 💡 **Debugging Remember-All:** When dealing with registry issues resulting in an `ImagePullBackOff` or `ErrImagePull`, 
+check for case-sensitive typos or configure explicit `imagePullSecrets` tokens to authorize cluster access to private images.
