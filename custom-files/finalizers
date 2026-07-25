@@ -1,0 +1,108 @@
+finalizers
+==============
+
+1. Important Concept: Who Removes the Finalizer?
+A custom finalizer key (e.g., [local.example.com/file-check](https://local.example.com/file-check)) does not execute logic on its own.
+Kubernetes itself only sees string labels. For a finalizer to check a local folder and release the Pod, you need an active Controller/Watcher script running in the background.
+
+Controller reconcile loop watching for deletion and evaluating conditions. Source: iximiuz Labs
+  [ User runs: kubectl delete pod file-protected-pod ]
+                           │
+                           ▼
+  Kubernetes marks Pod with 'deletionTimestamp'
+                           │
+                           ▼
+  [ Watcher Script detects Pod pending deletion ]
+                           │
+  ┌────────────────────────┴────────────────────────┐
+  │ Check Host: Does '/tmp/my-protected-data' exist? │
+  └────────────────────────┬────────────────────────┘
+                           │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+          [ YES ]                     [ NO ]
+    Keep Pod stuck in          Remove Finalizer via API
+       Terminating                     │
+                                       ▼
+                             Pod is removed from etcd
+2. Complete End-to-End Demo Script
+Save this script as custom-folder-finalizer-demo.sh and run it in your terminal. It sets up the protected folder, deploys the Pod with a finalizer, demonstrates how deletion blocks while the folder exists, and automatically releases the Pod once the folder is removed.
+Bash
+#!/usr/bin/env bash
+
+# Exit immediately if a command fails
+set -e
+
+PROTECTED_DIR="/tmp/my-protected-data"
+POD_NAME="folder-protected-pod"
+FINALIZER_KEY="local.example.com/file-check"
+
+echo "=== 1. CREATING LOCAL PROTECTED FOLDER ON HOST ==="
+mkdir -p "${PROTECTED_DIR}"
+echo "Important local files" > "${PROTECTED_DIR}/data.txt"
+echo "Created folder: ${PROTECTED_DIR}"
+
+echo -e "\n=== 2. CREATING POD WITH CUSTOM FINALIZER ==="
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD_NAME}
+  namespace: default
+  finalizers:
+    - ${FINALIZER_KEY}
+spec:
+  containers:
+  - name: app
+    image: busybox:1.36
+    command: ["sh", "-c", "while true; do sleep 5; done"]
+EOF
+
+echo "Waiting for Pod to be Running..."
+kubectl wait --for=condition=Ready "pod/${POD_NAME}" --timeout=30s
+
+echo -e "\n=== 3. TRIGGERING POD DELETION IN BACKGROUND ==="
+echo "Running 'kubectl delete pod ${POD_NAME}' in background..."
+kubectl delete pod "${POD_NAME}" &
+DELETE_PID=$!
+
+sleep 3
+
+echo -e "\n=== 4. SHOWING STUCK POD IN 'TERMINATING' STATE ==="
+kubectl get pod "${POD_NAME}"
+echo "deletionTimestamp is set to:"
+kubectl get pod "${POD_NAME}" -o jsonpath='{.metadata.deletionTimestamp}'
+
+echo -e "\n\n=== 5. RUNNING CONTROLLER SCRIPT ==="
+echo "The watcher checks if '${PROTECTED_DIR}' exists..."
+
+# Controller Loop
+while true; do
+  if [ -d "${PROTECTED_DIR}" ]; then
+    echo "[Controller] Folder '${PROTECTED_DIR}' still exists! Pod CANNOT be deleted."
+    echo "[Controller] To release the Pod, run: rmdir ${PROTECTED_DIR}"
+    sleep 4
+  else
+    echo "[Controller] Folder '${PROTECTED_DIR}' is gone! Removing finalizer now..."
+    kubectl patch pod "${POD_NAME}" \
+      --type=merge \
+      -p "{\"metadata\":{\"finalizers\":null}}"
+    break
+  fi
+done
+
+echo -e "\nWaiting for background delete command to finish..."
+wait $DELETE_PID
+
+echo -e "\n=== 6. VERIFYING POD DELETION ==="
+kubectl get pod "${POD_NAME}" || echo "Pod successfully deleted from etcd!"
+How to Test It Interactively
+If you run the script, open a second terminal window while the script output says Folder '/tmp/my-protected-data' still exists!:
+Check the Pod status in terminal 2:
+Bash
+kubectl get pod folder-protected-pod
+Output shows STATUS: Terminating.
+Delete the directory to release the lock:
+Bash
+rm -rf /tmp/my-protected-data
+Watch terminal 1—the watcher script instantly detects the folder removal, patches finalizers: null, and Kubernetes deletes the Pod immediately.
