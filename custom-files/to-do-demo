@@ -1,0 +1,113 @@
+Here is the single, self-contained setup.yaml file containing all Kubernetes manifests (PostgreSQL ConfigMap, Deployment, ClusterIP Service, and the Pandas Pod), along with the complete execution script to run it from scratch.
+1. Complete Unified Kubernetes Manifest (setup.yaml)
+# 1. ConfigMap: Inserts sample table and data into PostgreSQL on startup
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50),
+        role VARCHAR(50)
+    );
+    INSERT INTO users (name, role) VALUES ('Alice', 'DevOps Lead'), ('Bob', 'Data Analyst');
+---
+# 2. Deployment: Runs PostgreSQL image
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_PASSWORD
+          value: "postgres"
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: init-volume
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: init-volume
+        configMap:
+          name: postgres-init-script
+---
+# 3. Service: Exposes PostgreSQL internally on ClusterIP (postgres-service:5432)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+---
+# 4. Pod: Runs Python Pandas, connects to ClusterIP, reads SQL table, prints df.loc[0]
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pandas-app
+  labels:
+    app: pandas-app
+spec:
+  containers:
+  - name: pandas-container
+    image: python:3.10-slim
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      pip install --no-cache-dir pandas psycopg2-binary sqlalchemy && \
+      python3 -c "
+      import pandas as pd
+      from sqlalchemy import create_engine
+
+      db_url = 'postgresql://postgres:postgres@postgres-service:5432/postgres'
+      engine = create_engine(db_url)
+
+      # Query table into Pandas DataFrame
+      df = pd.read_sql('SELECT * FROM users;', engine)
+
+      print('=== Full DataFrame ===')
+      print(df)
+
+      print('\n=== Executed df.loc[0] ===')
+      print(df.loc[0])
+      " && \
+      sleep 3600
+
+2. Run Commands & Check Logs
+Execute the following terminal commands to deploy the resources and check the Pandas output:
+# 1. Apply all Kubernetes resources
+kubectl apply -f setup.yaml
+
+# 2. Wait for the pandas container to finish installation and execution
+kubectl wait --for=condition=Ready pod/pandas-app --timeout=60s
+
+# 3. View the container logs (shows df.loc[0])
+kubectl logs pandas-app
+
+# 4. Execute df.loc[0] directly inside the container via kubectl exec
+kubectl exec -it pandas-app -- python3 -c "
+import pandas as pd
+from sqlalchemy import create_engine
+engine = create_engine('postgresql://postgres:postgres@postgres-service:5432/postgres')
+df = pd.read_sql('SELECT * FROM users;', engine)
+print('Direct Exec Output:')
+print(df.loc[0])
+"
